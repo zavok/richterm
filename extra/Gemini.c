@@ -121,7 +121,6 @@ getbody(char *header, Biobuf *bfd)
 {
 	char *line;
 	int preform = 0;
-	int waslink = 0;
 
 	if (strncmp(header + 3, "text", 4) == 0) {
 
@@ -133,19 +132,12 @@ getbody(char *header, Biobuf *bfd)
 				if (preform == 1) print("f/lib/font/bit/terminus/unicode.12.font\n");
 				else print("f\n");
 			} else if (strncmp(line, "=>", 2) == 0) {
-				waslink = 1;
 				printlink(line);
 			} else {
-				if (waslink != 0) {
-					waslink = 0;
-					print("l\n");
-				}
 				print(".%s\n" "n\n", line);
 			}
 			free(line);
 		}
-
-		if (waslink == 1) print("l\n");
 		if (preform == 1) print("f\n");
 
 	} else {
@@ -159,14 +151,13 @@ printlink(char *line)
 	char *p, phost[1024];
 
 	for (p = line + 2; (*p == ' ') || (*p == '\t'); p++) if (*p == '\0') return;
-	for (line = p; (*line != ' ') && (*line != '\t') && (*line != '\0'); line++);
+	line = strpbrk(p, " \t");
 
-	if (line != '\0') {
+	if (line != nil) {
 		*line = '\0';
 		line++;
-	}
-
-	for (; (*line == ' ') || (*line == '\t') && (*line != '\0'); line++);
+		for (; (*line == ' ') || (*line == '\t'); line++);
+	} else line = p;
 
 	phost[0] = '\0';
 	if (strstr(p, "://") == nil) {
@@ -175,5 +166,5 @@ printlink(char *line)
 		if (p[0] != '/') strcat(phost, "/");
 	}
 
-	print("l%s%s\n" ".%s\n" "n\n", phost, p, line);
+	print("l%s%s\n" ".%s\n" "l\n" "n\n", phost, p, line);
 }
