@@ -194,7 +194,7 @@ threadmain(int argc, char **argv)
 			while (nbrecv(redrawc, &ov) != 0);
 
 			lockdisplay(display);
-			draw(screen, screen->r, Inormbg, nil, ZP);
+			draw(screen, rich.r, Inormbg, nil, ZP);
 			drawelems();
 			drawscrollbar();
 			flushimage(display, 1);
@@ -491,8 +491,8 @@ resize(void)
 	  Pt(screen->r.min.x + 13, screen->r.max.y - 1)
 	);
 	rich.r = Rpt(
-	  addpt(screen->r.min, Pt(17, 1)),
-	  subpt(screen->r.max, Pt(1,1))
+	  addpt(screen->r.min, Pt(17, 0)),
+	  screen->r.max
 	);
 }
 
