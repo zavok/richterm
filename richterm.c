@@ -784,7 +784,14 @@ drawrune(DrawState *ds, Elem *e)
 	bg = ((ds->n >= rich.selmin) &&
 	  (ds->n < rich.selmax)) ? Iselbg : Inormbg;
 
-	if ((ds->pos.y >= rich.r.min.y - ds->font->height) && (ds->pos.y <= rich.r.max.y)) {
+	if (r.max.x > rich.r.max.x) {
+		if ((bg == Iselbg) && (rectXrect(r, rich.r) != 0))
+			draw(screen, r, bg, nil, ZP);
+		ds->pos = ds->nlpos;
+		r = elemrect(ds, e);
+	}
+
+	if (rectXrect(r, rich.r) != 0) {
 		if (bg == Iselbg) draw(screen, r, bg, nil, ZP);
 		runestringn(screen, ds->pos, fg, ZP, ds->font, R, 1);
 	}
