@@ -8,7 +8,7 @@
 #include <cursor.h>
 #include <9p.h>
 
-void usage(void);
+#include "richterm.h"
 
 void
 threadmain(int argc, char **argv)
@@ -16,22 +16,29 @@ threadmain(int argc, char **argv)
 	Mousectl *mctl;
 	int rv[2];
 	Mouse mv;
+	View view;
 	ARGBEGIN{
+	case 'D':
+		chatty9p++;
+		break;
 	default:
 		usage();
 	}ARGEND
 
-	// init graphics and I/O
-	if (initdraw(0, 0, "richterm") < 0) sysfatal("initdraw failed: %r");
+	if (initdraw(0, 0, "richterm") < 0)
+		sysfatal("initdraw failed: %r");
+	if (initview(&view) < 0) sysfatal("initview failed: %r);
 	draw(screen, screen->r, display->white, nil, ZP);
 	flushimage(display, 1);
-	mctl = initmouse(nil, screen);
-	if (mctl == nil) sysfatal("initmouse failed: %r");
-	
-	// init /dev fs for console
-	
+	if ((mctl = initmouse(nil, screen)) == nil)
+		sysfatal("initmouse failed: %r");
+
+	if (initdevfs() < 0) sysfatal("initdevfs failed: %r");
 	// init /mnt fs for exposing internals
-	// even processing loop
+
+	// launch a subprocess from cmd passed on args
+	// if args are empty, cmd = "rc"
+
 	enum {MOUSE, RESIZE, NONE};
 	Alt alts[3]={
 		{mctl->c, &mv, CHANRCV},
@@ -43,7 +50,8 @@ threadmain(int argc, char **argv)
 		case MOUSE:
 			break;
 		case RESIZE:
-			if (getwindow(display, Refnone) < 0) sysfatal("resize failed: %r");
+			if (getwindow(display, Refnone) < 0)
+				sysfatal("resize failed: %r");
 			draw(screen, screen->r, display->white, nil, ZP);
 			flushimage(display, 1);
 			break;
@@ -56,6 +64,15 @@ threadmain(int argc, char **argv)
 void
 usage(void)
 {
-	fprint(2, "usage: %s [cmd]\n", argv0);
+	fprint(2, "usage: %s [-D] [cmd]\n", argv0);
 	threadexitsall("usage");
+}
+
+int
+initview(View *view)
+{
+	char *m = "Welcome to RichTerm!";
+	view->count = 1;
+	view->obj = malloc(sizeof(Obj));
+	view->obj[0] = (Obj){ "text", nil, m, strlen(m) };
 }
