@@ -4,6 +4,8 @@
 #include <thread.h>
 #include <9p.h>
 
+#include "richterm.h"
+
 void
 devfs_read(Req *r)
 {
