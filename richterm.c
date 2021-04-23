@@ -49,7 +49,8 @@ threadmain(int argc, char **argv)
 	rich.obj = malloc(sizeof(Object) * 4);
 	rich.count = 4;
 	rich.obj[0] = (Object){"text", nil, "hello ", strlen("hello ")};
-	rich.obj[1] = (Object){"text", nil, "world",  strlen("world")};
+	rich.obj[1] = (Object){"text",
+		"font=/lib/font/bit/terminusunicode.18.font", "world",  strlen("world")};
 	rich.obj[2] = (Object){"text", nil, "!",      strlen("!")};
 	rich.obj[3] = (Object){"text", nil, "\n",     strlen("\n")};
 
@@ -125,7 +126,13 @@ generatepage(Rectangle r, Rich *rich)
 		view.obj = obj;
 		view.page = &page;
 		view.dp = obj->data;
-		view.r = Rpt(pt, addpt(pt, Pt(100,20)));
+		view.length = strlen(view.dp);
+		view.font = font;
+		view.r = (Rectangle){
+			pt,
+			addpt(pt, Pt(stringnwidth(view.font, view.dp, view.length),
+				view.font->height))
+		};
 		page.view[page.count -1] = view;
 		pt.y = view.r.max.y;
 	}

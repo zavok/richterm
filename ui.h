@@ -18,6 +18,8 @@ typedef struct Page Page;
 struct View {
 	Object *obj;
 	char *dp;
+	long length;
+	Font *font;
 	Rectangle r;
 	Page *page;
 };
