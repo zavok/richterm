@@ -56,30 +56,34 @@ threadmain(int argc, char **argv)
 	if (initdraw(0, 0, "richterm") < 0)
 		sysfatal("initdraw failed: %r");
 
-	//if (initview(&view) < 0) sysfatal("initview failed: %r);
 	rich.obj = malloc(sizeof(Object) * 4);
 	rich.count = 4;
 	rich.obj[0] = (Object){
 		"text",
 		"font=/lib/font/bit/terminus/unicode.14.font",
-		"Hello ",
-		strlen("Hello ")
+		"Hello\nworld!\n",
+		strlen("Hello\nworld!\n")
 	};
 	rich.obj[1] = (Object){
 		"text",
 		"font=/lib/font/bit/terminus/unicode.18.font",
-		" world",
-		strlen(" world")
+		"world of hello\n",
+		strlen("world of hello\n")
 	};
-	rich.obj[2] = (Object){"text", "", "!",      strlen("!")};
-	rich.obj[3] = (Object){"text", "", "\t\n",     strlen("\t\n")};
+	rich.obj[2] = (Object){"text", "", "emerglerd\n", strlen("emerglerd\n")};
+	rich.obj[3] = (Object){
+		"text",
+		"",
+		"very long line very long line very long line\n",
+		strlen("very long line very long line very long line\n")
+	};
 
 	rich.page = generatepage(screen->r, &rich);
 
 	draw(screen, screen->r, display->black, nil, ZP);
 
 	int i;
-	for (i = 0; i < 4; i++){
+	for (i = 0; i < rich.page.count; i++){
 		drawview(screen, &rich.page.view[i]);
 	}
 	flushimage(display, 1);
@@ -107,7 +111,7 @@ threadmain(int argc, char **argv)
 				sysfatal("resize failed: %r");
 			rich.page = generatepage(screen->r, &rich);
 			draw(screen, screen->r, display->black, nil, ZP);
-			for (i = 0; i < 4; i++){
+			for (i = 0; i < rich.page.count; i++){
 				drawview(screen, &rich.page.view[i]);
 			}
 			flushimage(display, 1);
@@ -121,15 +125,8 @@ threadmain(int argc, char **argv)
 void
 drawview(Image *dst, View *v)
 {
-	int w, n;
-	char buf[4096];
-	w = Dx(v->r);
 	draw(dst, v->r, display->white, nil, ZP);
-	for (n = 0; stringnwidth(font, v->dp, n) < w; n++)
-		if (n >= 4096) break;
-	memcpy(buf, v->dp, n);
-	buf[n] = '\0';
-	string(dst, v->r.min, display->black, ZP, v->font, buf);
+	string(dst, v->r.min, display->black, ZP, v->font, v->dp);
 }
 
 Page
@@ -137,52 +134,82 @@ generatepage(Rectangle r, Rich *rich)
 {
 	#define BSIZE 4096
 
-	char *bp, buf[BSIZE], *argc[2];
+	char *bp, *sp, buf[BSIZE], *argc[2];
 	Object *obj;
-	View view;
-	int newline, ymax, i, argv;
+	int newline, ymax, argv;
 	Point pt;
 	Page page;
 
 	page.view = nil;
 	page.count = 0;
 	pt = r.min;
-	for (ymax = 0, i = 0; i < rich->count; i++) {
-		// TODO: set newline=1 when there's \n character
-		// or when we hit the edge of the window
+	
+	ymax = 0;
+	
+	obj = rich->obj;
+	sp = obj->data;
+	
+	while (obj < rich->obj + rich->count) {
+		View *v;
+		char *brkp;
+		
 		newline = 0;
-		obj = &rich->obj[i];
-
 		page.count++;
 		page.view = realloc(page.view, sizeof(View) * (page.count));
-
-		view.obj = obj;
-		view.page = &page;
-		view.font = font;
-		view.dp = obj->data;
-		view.length = strlen(view.dp);
+		v = page.view + page.count - 1;
+		
+		v->obj = obj;
+		v->page = &page;
+		v->font = font;
+		
+		// parse opts, don't like it here.
 		strncpy(buf, obj->opts, BSIZE);
 		for (bp = buf; (bp != nil) && (argv = tokenize(bp, argc, 2) > 0); bp = argc[1]){
 			if (strstr(argc[0], "font") == argc[0]) {
-				view.font = getfont(&fonts, argc[0] + 5);
+				v->font = getfont(&fonts, argc[0] + 5);
 			}
 			if (argv == 1) break;
 		}
-		view.r = (Rectangle){
-			pt,
-			addpt(pt, Pt(stringnwidth(view.font, view.dp, view.length),
-				view.font->height))
-		};
+		
+		v->dp = sp;
+		v->length = obj->count;
+		
+		if ((brkp = strpbrk(v->dp, "\n\t")) != 0) {
+			v->length = brkp - v->dp;
+			sp = v->dp + v->length + 1;
+			switch (*brkp) {
+			case '\n':
+				newline = 1;
+				break;
+			case '\t':
+				break;
+			}
+		}
+		while (stringnwidth(v->font, v->dp, v->length) > (r.max.x - pt.x)) {
+			newline = 1;
+			v->length--;
+			sp = v->dp + v->length;
+		}
+		
+		v->r = Rpt(pt, Pt(pt.x + stringnwidth(v->font, v->dp, v->length),
+			pt.y + v->font->height));
+		
+		ymax = (ymax > v->r.max.y) ? ymax : v->r.max.y;
 
-		page.view[page.count -1] = view;
-		ymax = (ymax > view.r.max.y) ? ymax : view.r.max.y;
-		if (newline == 0) pt.x = view.r.max.x;
-		else {
+		if (newline != 0) {
 			pt.x = r.min.x;
-			pt.y += ymax;
-			ymax = 0;
+			pt.y = ymax;
+		} else {
+			pt.x = v->r.max.x;
+		}
+			
+		if (v->length >= obj->count) {
+
+			obj++;
+			sp = obj->data;
 		}
 	}
+	
 	return page;
 }
 
