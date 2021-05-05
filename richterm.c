@@ -43,8 +43,10 @@ threadmain(int argc, char **argv)
 {
 	Rich rich;
 	Mousectl *mctl;
+	Keyboardctl *kctl;
 	int rv[2];
 	Mouse mv;
+	Rune kv;
 	ARGBEGIN{
 	case 'D':
 		chatty9p++;
@@ -54,7 +56,7 @@ threadmain(int argc, char **argv)
 	} ARGEND
 
 	if (initdraw(0, 0, "richterm") < 0)
-		sysfatal("initdraw failed: %r");
+		sysfatal("%s: %r", argv0);
 
 	rich.obj = malloc(sizeof(Object) * 4);
 	rich.count = 4;
@@ -67,8 +69,8 @@ threadmain(int argc, char **argv)
 	rich.obj[1] = (Object){
 		"text",
 		"font=/lib/font/bit/terminus/unicode.18.font",
-		"world of hello\n",
-		strlen("world of hello\n")
+		"\nworld of hello\n",
+		strlen("\nworld of hello\n")
 	};
 	rich.obj[2] = (Object){"text", "", "emerglerd\n", strlen("emerglerd\n")};
 	rich.obj[3] = (Object){
@@ -80,7 +82,7 @@ threadmain(int argc, char **argv)
 
 	rich.page = generatepage(screen->r, &rich);
 
-	draw(screen, screen->r, display->black, nil, ZP);
+	draw(screen, screen->r, display->white, nil, ZP);
 
 	int i;
 	for (i = 0; i < rich.page.count; i++){
@@ -88,7 +90,9 @@ threadmain(int argc, char **argv)
 	}
 	flushimage(display, 1);
 	if ((mctl = initmouse(nil, screen)) == nil)
-		sysfatal("initmouse failed: %r");
+		sysfatal("%s: %r", argv0);
+	if ((kctl = initkeyboard(nil)) == nil)
+		sysfatal("%s: %r", argv0);
 
 	// if (initdevfs() < 0) sysfatal("initdevfs failed: %r");
 	// init /mnt fs for exposing internals
@@ -96,10 +100,11 @@ threadmain(int argc, char **argv)
 	// launch a subprocess from cmd passed on args
 	// if args are empty, cmd = "rc"
 
-	enum {MOUSE, RESIZE, NONE};
-	Alt alts[3]={
+	enum {MOUSE, RESIZE, KBD, NONE};
+	Alt alts[4]={
 		{mctl->c, &mv, CHANRCV},
 		{mctl->resizec, rv, CHANRCV},
+		{kctl->c, &kv, CHANRCV},
 		{nil, nil, CHANEND},
 	};
 	for (;;) {
@@ -110,11 +115,14 @@ threadmain(int argc, char **argv)
 			if (getwindow(display, Refnone) < 0)
 				sysfatal("resize failed: %r");
 			rich.page = generatepage(screen->r, &rich);
-			draw(screen, screen->r, display->black, nil, ZP);
+			draw(screen, screen->r, display->white, nil, ZP);
 			for (i = 0; i < rich.page.count; i++){
 				drawview(screen, &rich.page.view[i]);
 			}
 			flushimage(display, 1);
+			break;
+		case KBD:
+			if (kv == 0x7f) threadexitsall(nil);
 			break;
 		case NONE:
 			break;
@@ -126,7 +134,7 @@ void
 drawview(Image *dst, View *v)
 {
 	draw(dst, v->r, display->white, nil, ZP);
-	string(dst, v->r.min, display->black, ZP, v->font, v->dp);
+	stringn(dst, v->r.min, display->black, ZP, v->font, v->dp, v->length);
 }
 
 Page
@@ -203,7 +211,7 @@ generatepage(Rectangle r, Rich *rich)
 			pt.x = v->r.max.x;
 		}
 			
-		if (v->length >= obj->count) {
+		if (v->length >= obj->count - 1) {
 
 			obj++;
 			sp = obj->data;
