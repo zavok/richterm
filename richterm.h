@@ -11,4 +11,4 @@ struct Object {
 	long count;
 };
 
-int initdevfs(void);
+int initdevfs(Channel *);
