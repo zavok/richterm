@@ -47,6 +47,7 @@ threadmain(int argc, char **argv)
 	int i;
 	Mousectl *mctl;
 	Keyboardctl *kctl;
+	Devfsctl *dctl;
 	int rv[2];
 	Mouse mv;
 	Rune kv;
@@ -87,7 +88,6 @@ threadmain(int argc, char **argv)
 		"different fonts\n",
 		strlen("different fonts\n")
 	};
-	oc = chancreate(sizeof(Object), 0);
 	rich.page = generatepage(screen->r, &rich);
 
 	draw(screen, screen->r, display->white, nil, ZP);
@@ -102,18 +102,18 @@ threadmain(int argc, char **argv)
 	if ((kctl = initkeyboard(nil)) == nil)
 		sysfatal("%s: %r", argv0);
 
-	if (initdevfs(oc) < 0) sysfatal("initdevfs failed: %r");
+	if ((dctl = initdevfs()) == nil) sysfatal("initdevfs failed: %r");
 	// init /mnt fs for exposing internals
 
 	// launch a subprocess from cmd passed on args
 	// if args are empty, cmd = "rc"
 
-	enum {MOUSE, RESIZE, KBD, OBJ, NONE};
+	enum {MOUSE, RESIZE, KBD, DEVFSWRITE, NONE};
 	Alt alts[5]={
 		{mctl->c, &mv, CHANRCV},
 		{mctl->resizec, rv, CHANRCV},
 		{kctl->c, &kv, CHANRCV},
-		{oc, &ov, CHANRCV},
+		{dctl->wc, &ov, CHANRCV},
 		{nil, nil, CHANEND},
 	};
 	for (;;) {
@@ -133,7 +133,7 @@ threadmain(int argc, char **argv)
 		case KBD:
 			if (kv == 0x7f) threadexitsall(nil);
 			break;
-		case OBJ:
+		case DEVFSWRITE:
 			rich.count++;
 			rich.obj = realloc(rich.obj, rich.count * sizeof(Object));
 			rich.obj[rich.count - 1] = ov;

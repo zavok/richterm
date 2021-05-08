@@ -1,8 +1,9 @@
-/*
- * Object is an atom of internal data structure.
- * There should be a list of Objects, manipulatable
- * either through GUI or file system.
- */
+typedef struct Devfsctl Devfsctl;
+struct Devfsctl {
+	Channel *rc;
+	Channel *wc;
+};
+
 typedef struct Object Object;
 struct Object {
 	char *type;
@@ -11,4 +12,4 @@ struct Object {
 	long count;
 };
 
-int initdevfs(Channel *);
+Devfsctl * initdevfs(void);

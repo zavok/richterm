@@ -6,8 +6,6 @@
 
 #include "richterm.h"
 
-Channel *objchan;
-
 void
 devfs_read(Req *r)
 {
@@ -17,30 +15,37 @@ devfs_read(Req *r)
 void
 devfs_write(Req *r)
 {
+	Devfsctl *dctl;
 	Object obj;
+	dctl = r->fid->file->aux;
+	if (dctl == nil) sysfatal("dctl is nil");
+	if (dctl->wc == nil) sysfatal("dctl->wc is nil");
 	obj.type = strdup("text");
 	obj.opts = strdup("");
 	obj.count = r->ifcall.count + 1;
 	obj.data = mallocz(obj.count, 1);
 	memcpy(obj.data, r->ifcall.data, r->ifcall.count);
-	send(objchan, &obj);
+	send(dctl->wc, &obj);
 	r->ofcall.count = r->ifcall.count;
 	respond(r, nil);
 }
 
-int
-initdevfs(Channel *chan)
+Devfsctl *
+initdevfs(void)
 {
-	/* TODO: should set errstr */
+	Devfsctl *dctl;
 	static Srv srv = {
 		.read = devfs_read,
 		.write = devfs_write,
 	};
-	objchan = chan;
+	dctl = mallocz(sizeof(Devfsctl), 1);
+	
+	dctl->wc = chancreate(sizeof(Object), 0);
 	srv.tree = alloctree(nil, nil, 0600, nil);
-	if (srv.tree == nil) return -1;
-	if (createfile(srv.tree->root, "cons", nil, 0600, nil) == nil)
-		return -1;
+	if (srv.tree == nil)
+		return nil;
+	if (createfile(srv.tree->root, "cons", nil, 0600, dctl) == nil)
+		return nil;
 	threadpostmountsrv(&srv, "rtdev", nil, 0);
-	return 0;
+	return dctl;
 }
