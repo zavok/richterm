@@ -9,6 +9,12 @@
 void
 devfs_read(Req *r)
 {
+	Devfsctl *dctl;
+	int kv;
+	dctl = r->fid->file->aux;
+	recv(dctl->rc, &kv);
+	r->ofcall.count = 1; //sizeof(int);
+	memcpy(r->ofcall.data, &kv, 1); 
 	respond(r, nil);
 }
 
@@ -41,11 +47,14 @@ initdevfs(void)
 	dctl = mallocz(sizeof(Devfsctl), 1);
 	
 	dctl->wc = chancreate(sizeof(Object), 0);
-	srv.tree = alloctree(nil, nil, 0600, nil);
+	dctl->rc = chancreate(sizeof(int), 1024);
+	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	if (srv.tree == nil)
 		return nil;
-	if (createfile(srv.tree->root, "cons", nil, 0600, dctl) == nil)
+	if (createfile(srv.tree->root, "cons", "richterm", 0666, dctl) == nil)
 		return nil;
-	threadpostmountsrv(&srv, "rtdev", nil, 0);
+	if (createfile(srv.tree->root, "consctl", "richterm", 0666, dctl) == nil)
+		return nil;
+	threadpostmountsrv(&srv, nil, "/dev", MBEFORE);
 	return dctl;
 }

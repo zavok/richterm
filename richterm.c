@@ -25,29 +25,78 @@ struct Fonts {
 	int count;
 };
 
+int hostpid = -1;
+Channel *pidchan;
+
+Devfsctl *dctl;
+
 Fonts fonts;
 
 Page generatepage(Rectangle, Rich *);
 Font* getfont(Fonts *, char *);
 void addfont(Fonts *, Font *);
+void shutdown(void);
+void send_interrupt(void);
+void runcmd(void *args);
+
+void
+runcmd(void *args)
+{
+	char **argv = args;
+	char *cmd;
+	
+	rfork(RFNAMEG);
+
+	if ((dctl = initdevfs()) == nil)
+		sysfatal("initdevfs failed: %r");
+	
+	rfork(RFFDG);
+	close(0);
+	open("/dev/cons", OREAD);
+	close(1);
+	open("/dev/cons", OWRITE);
+	dup(1, 2);
+	
+	cmd = nil;
+	while (*argv != nil) {
+		if (cmd == nil) cmd = strdup(*argv);
+		else cmd = smprint("%s %q", cmd, *argv);
+		argv++;
+	}
+
+	procexecl(pidchan, "/bin/rc", "rcX", cmd == nil ? nil : "-c", cmd, nil);
+	sysfatal("%r");
+}
+
+void
+shutdown(void)
+{
+	send_interrupt();
+	threadexitsall(nil);
+}
+
+void
+send_interrupt(void)
+{
+	if(hostpid > 0)
+		postnote(PNGROUP, hostpid, "interrupt");
+}
 
 void
 usage(void)
 {
 	fprint(2, "usage: %s [-D] [cmd]\n", argv0);
-	threadexitsall("usage");
+	exits("usage");
 }
 
 void
 threadmain(int argc, char **argv)
 {
-	Channel *oc;
 	Object ov;
 	Rich rich;
 	int i;
 	Mousectl *mctl;
 	Keyboardctl *kctl;
-	Devfsctl *dctl;
 	int rv[2];
 	Mouse mv;
 	Rune kv;
@@ -58,6 +107,15 @@ threadmain(int argc, char **argv)
 	default:
 		usage();
 	} ARGEND
+
+
+	if(rfork(RFENVG) < 0)
+		sysfatal("rfork: %r");
+	atexit(shutdown);
+
+	pidchan = chancreate(sizeof(int), 0);
+	proccreate(runcmd, argv, 16 * 1024);
+	hostpid = recvul(pidchan);
 
 	if (initdraw(0, 0, "richterm") < 0)
 		sysfatal("%s: %r", argv0);
@@ -102,7 +160,7 @@ threadmain(int argc, char **argv)
 	if ((kctl = initkeyboard(nil)) == nil)
 		sysfatal("%s: %r", argv0);
 
-	if ((dctl = initdevfs()) == nil) sysfatal("initdevfs failed: %r");
+	// if ((dctl = initdevfs()) == nil) sysfatal("initdevfs failed: %r");
 	// init /mnt fs for exposing internals
 
 	// launch a subprocess from cmd passed on args
@@ -131,7 +189,8 @@ threadmain(int argc, char **argv)
 			flushimage(display, 1);
 			break;
 		case KBD:
-			if (kv == 0x7f) threadexitsall(nil);
+			if (kv == 0x7f) shutdown();
+			nbsend(dctl->rc, &kv);
 			break;
 		case DEVFSWRITE:
 			rich.count++;
