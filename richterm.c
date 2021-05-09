@@ -37,7 +37,8 @@ Font* getfont(Fonts *, char *);
 void addfont(Fonts *, Font *);
 void shutdown(void);
 void send_interrupt(void);
-void runcmd(void *args);
+void runcmd(void *);
+void scroll(Point, Rich *);
 
 void
 runcmd(void *args)
@@ -175,33 +176,19 @@ threadmain(int argc, char **argv)
 		case KBD:
 			if (kv == 0x7f) shutdown();
 			if (kv == 0xf00e) { /* d-pad up */
-				rich.page.scroll.y -= Dy(screen->r) / 8;
-				if (rich.page.scroll.y <= 0) rich.page.scroll.y = 0;
-				draw(screen, screen->r, display->white, nil, ZP);
-				drawpage(screen, &rich.page);
-				flushimage(display, 1);
+				scroll(Pt(0, rich.page.scroll.y - Dy(screen->r) / 8), &rich);
 				break;
 			}
 			if (kv == 0xf800) { /* d-pad down */
-				rich.page.scroll.y += Dy(screen->r) / 8;
-				draw(screen, screen->r, display->white, nil, ZP);
-				drawpage(screen, &rich.page);
-				flushimage(display, 1);
+				scroll(Pt(0, rich.page.scroll.y + Dy(screen->r) / 8), &rich);
 				break;
 			}
 			if (kv == 0xf00f) { /* page up */
-				rich.page.scroll.y -= Dy(screen->r) / 4;
-				if (rich.page.scroll.y <= 0) rich.page.scroll.y = 0;
-				draw(screen, screen->r, display->white, nil, ZP);
-				drawpage(screen, &rich.page);
-				flushimage(display, 1);
+				scroll(Pt(0, rich.page.scroll.y - Dy(screen->r) / 4), &rich);
 				break;
 			}
 			if (kv == 0xf013) { /* page down */
-				rich.page.scroll.y += Dy(screen->r) / 4;
-				draw(screen, screen->r, display->white, nil, ZP);
-				drawpage(screen, &rich.page);
-				flushimage(display, 1);
+				scroll(Pt(0, rich.page.scroll.y + Dy(screen->r) / 4), &rich);
 				break;
 			}
 			olast = rich.obj + rich.count - 1;
@@ -333,6 +320,9 @@ generatepage(Rectangle r, Rich *rich)
 			sp = obj->data;
 		}
 	}
+	rich->page.max.y = ymax;
+	rich->page.max.x = 0;
+
 }
 
 Font *
@@ -365,4 +355,19 @@ addfont(struct Fonts *fonts, Font *font)
 	}
 	fonts->data[fonts->count] = font;
 	fonts->count++;
+}
+
+void
+scroll(Point p, Rich *r)
+{
+	if (p.x < 0) p.x = 0;
+	if (p.x > r->page.max.x) p.x = r->page.max.x;
+	if (p.y < 0) p.y = 0;
+	if (p.y > r->page.max.y) p.y = r->page.max.y;
+
+	r->page.scroll = p;
+
+	draw(screen, screen->r, display->white, nil, ZP);
+	drawpage(screen, &r->page);
+	flushimage(display, 1);
 }

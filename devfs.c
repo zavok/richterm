@@ -6,34 +6,47 @@
 
 #include "richterm.h"
 
+File *cons, *consctl;
+
 void
 devfs_read(Req *r)
 {
+	File *f;
 	Devfsctl *dctl;
 	int kv;
-	dctl = r->fid->file->aux;
-	recv(dctl->rc, &kv);
-	r->ofcall.count = 1; //sizeof(int);
-	memcpy(r->ofcall.data, &kv, 1); 
-	respond(r, nil);
+	f = r->fid->file;
+	dctl = f->aux;
+	if (f == cons) {
+		recv(dctl->rc, &kv);
+		r->ofcall.count = 1; //sizeof(int);
+		memcpy(r->ofcall.data, &kv, 1); 
+		respond(r, nil);
+	} else if (f == consctl) {
+		respond(r, "not implemented");
+	}
+	else respond(r, "what");
 }
 
 void
 devfs_write(Req *r)
 {
+	File *f;
 	Devfsctl *dctl;
 	Object obj;
-	dctl = r->fid->file->aux;
-	if (dctl == nil) sysfatal("dctl is nil");
-	if (dctl->wc == nil) sysfatal("dctl->wc is nil");
-	obj.type = strdup("text");
-	obj.opts = strdup("");
-	obj.count = r->ifcall.count + 1;
-	obj.data = mallocz(obj.count, 1);
-	memcpy(obj.data, r->ifcall.data, r->ifcall.count);
-	send(dctl->wc, &obj);
-	r->ofcall.count = r->ifcall.count;
-	respond(r, nil);
+	f = r->fid->file;
+	dctl = f->aux;
+	if (f == cons){
+		obj.type = strdup("text");
+		obj.opts = strdup("");
+		obj.count = r->ifcall.count;
+		obj.data = mallocz(obj.count + 1, 1);
+		memcpy(obj.data, r->ifcall.data, r->ifcall.count);
+		send(dctl->wc, &obj);
+		r->ofcall.count = r->ifcall.count;
+		respond(r, nil);
+	} else if (f == consctl) {
+		respond(r, "not implemented");
+	} else respond(r, "what");
 }
 
 Devfsctl *
@@ -51,10 +64,10 @@ initdevfs(void)
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	if (srv.tree == nil)
 		return nil;
-	if (createfile(srv.tree->root, "cons", "richterm", 0666, dctl) == nil)
-		return nil;
-	if (createfile(srv.tree->root, "consctl", "richterm", 0666, dctl) == nil)
-		return nil;
+	cons = createfile(srv.tree->root, "cons", "richterm", 0666, dctl);
+	if (cons == nil) return nil;
+	consctl = createfile(srv.tree->root, "consctl", "richterm", 0666, dctl);
+	if (consctl == nil) return nil;
 	threadpostmountsrv(&srv, nil, "/dev", MBEFORE);
 	return dctl;
 }
