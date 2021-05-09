@@ -32,7 +32,7 @@ Devfsctl *dctl;
 
 Fonts fonts;
 
-Page generatepage(Rectangle, Rich *);
+void generatepage(Rectangle, Rich *);
 Font* getfont(Fonts *, char *);
 void addfont(Fonts *, Font *);
 void shutdown(void);
@@ -92,7 +92,7 @@ usage(void)
 void
 threadmain(int argc, char **argv)
 {
-	Object ov;
+	Object ov, *olast;
 	Rich rich;
 	int i;
 	Mousectl *mctl;
@@ -120,39 +120,26 @@ threadmain(int argc, char **argv)
 	if (initdraw(0, 0, "richterm") < 0)
 		sysfatal("%s: %r", argv0);
 
-	rich.obj = malloc(sizeof(Object) * 4);
-	rich.count = 4;
+	rich.obj = malloc(sizeof(Object) * 2);
+	rich.count = 2;
 	rich.obj[0] = (Object){
 		"text",
 		"font=/lib/font/bit/lucida/unicode.24.font",
-		"This is richterm\n",
+		strdup("This is richterm\n"),
 		strlen("This is richterm\n")
 	};
 	rich.obj[1] = (Object){
 		"text",
 		"font=/lib/font/bit/lucida/unicode.16.font",
-		"The future of textual interfacing\n",
+		strdup("The future of textual interfacing\n"),
 		strlen("The future of textual interfacing\n")
 	};
-	rich.obj[2] = (Object){
-		"text",
-		"",
-		"we can has\n",
-		strlen("we can has\n")
-	};
-	rich.obj[3] = (Object){
-		"text",
-		"",
-		"different fonts\n",
-		strlen("different fonts\n")
-	};
-	rich.page = generatepage(screen->r, &rich);
+	rich.page.scroll = ZP;
+	rich.page.view = nil;
+	generatepage(screen->r, &rich);
 
 	draw(screen, screen->r, display->white, nil, ZP);
-
-	for (i = 0; i < rich.page.count; i++){
-		drawview(screen, &rich.page.view[i]);
-	}
+	drawpage(screen, &rich.page);
 	flushimage(display, 1);
 
 	if ((mctl = initmouse(nil, screen)) == nil)
@@ -160,14 +147,13 @@ threadmain(int argc, char **argv)
 	if ((kctl = initkeyboard(nil)) == nil)
 		sysfatal("%s: %r", argv0);
 
-	// if ((dctl = initdevfs()) == nil) sysfatal("initdevfs failed: %r");
 	// init /mnt fs for exposing internals
 
 	// launch a subprocess from cmd passed on args
 	// if args are empty, cmd = "rc"
 
 	enum {MOUSE, RESIZE, KBD, DEVFSWRITE, NONE};
-	Alt alts[5]={
+	Alt alts[5] = {
 		{mctl->c, &mv, CHANRCV},
 		{mctl->resizec, rv, CHANRCV},
 		{kctl->c, &kv, CHANRCV},
@@ -181,15 +167,52 @@ threadmain(int argc, char **argv)
 		case RESIZE:
 			if (getwindow(display, Refnone) < 0)
 				sysfatal("resize failed: %r");
-			rich.page = generatepage(screen->r, &rich);
+			generatepage(screen->r, &rich);
 			draw(screen, screen->r, display->white, nil, ZP);
-			for (i = 0; i < rich.page.count; i++){
-				drawview(screen, &rich.page.view[i]);
-			}
+			drawpage(screen, &rich.page);
 			flushimage(display, 1);
 			break;
 		case KBD:
 			if (kv == 0x7f) shutdown();
+			if (kv == 0xf00e) { /* d-pad up */
+				rich.page.scroll.y -= Dy(screen->r) / 8;
+				if (rich.page.scroll.y <= 0) rich.page.scroll.y = 0;
+				draw(screen, screen->r, display->white, nil, ZP);
+				drawpage(screen, &rich.page);
+				flushimage(display, 1);
+				break;
+			}
+			if (kv == 0xf800) { /* d-pad down */
+				rich.page.scroll.y += Dy(screen->r) / 8;
+				draw(screen, screen->r, display->white, nil, ZP);
+				drawpage(screen, &rich.page);
+				flushimage(display, 1);
+				break;
+			}
+			if (kv == 0xf00f) { /* page up */
+				rich.page.scroll.y -= Dy(screen->r) / 4;
+				if (rich.page.scroll.y <= 0) rich.page.scroll.y = 0;
+				draw(screen, screen->r, display->white, nil, ZP);
+				drawpage(screen, &rich.page);
+				flushimage(display, 1);
+				break;
+			}
+			if (kv == 0xf013) { /* page down */
+				rich.page.scroll.y += Dy(screen->r) / 4;
+				draw(screen, screen->r, display->white, nil, ZP);
+				drawpage(screen, &rich.page);
+				flushimage(display, 1);
+				break;
+			}
+			olast = rich.obj + rich.count - 1;
+			olast->count++;
+			olast->data = realloc(olast->data, olast->count + 1);
+			olast->data[olast->count - 1] = kv;
+			olast->data[olast->count] = 0;
+			generatepage(screen->r, &rich);
+			draw(screen, screen->r, display->white, nil, ZP);
+			drawpage(screen, &rich.page);
+			flushimage(display, 1);
 			nbsend(dctl->rc, &kv);
 			break;
 		case DEVFSWRITE:
@@ -197,7 +220,7 @@ threadmain(int argc, char **argv)
 			rich.obj = realloc(rich.obj, rich.count * sizeof(Object));
 			rich.obj[rich.count - 1] = ov;
 
-			rich.page = generatepage(screen->r, &rich);
+			generatepage(screen->r, &rich);
 			draw(screen, screen->r, display->white, nil, ZP);
 
 			for (i = 0; i < rich.page.count; i++){
@@ -213,13 +236,24 @@ threadmain(int argc, char **argv)
 }
 
 void
-drawview(Image *dst, View *v)
+drawpage(Image *dst, Page *p)
 {
-	draw(dst, v->r, display->white, nil, ZP);
-	stringn(dst, v->r.min, display->black, ZP, v->font, v->dp, v->length);
+	int i;
+	for (i = 0; i < p->count; i++) {
+		drawview(dst, p->view + i);
+	}
 }
 
-Page
+void
+drawview(Image *dst, View *v)
+{
+	Rectangle r;
+	r = rectsubpt(v->r, v->page->scroll);
+	draw(dst, r, display->white, nil, ZP);
+	stringn(dst, r.min, display->black, ZP, v->font, v->dp, v->length);
+}
+
+void
 generatepage(Rectangle r, Rich *rich)
 {
 	#define BSIZE 4096
@@ -228,12 +262,12 @@ generatepage(Rectangle r, Rich *rich)
 	Object *obj;
 	int newline, ymax, argv;
 	Point pt;
-	Page page;
+	Page *page;
+	page = &rich->page;
 
-	page.view = nil;
-	page.count = 0;
+	page->count = 0;
+	page->scroll = rich->page.scroll;
 	pt = r.min;
-	
 	ymax = 0;
 	
 	obj = rich->obj;
@@ -244,12 +278,12 @@ generatepage(Rectangle r, Rich *rich)
 		char *brkp;
 		
 		newline = 0;
-		page.count++;
-		page.view = realloc(page.view, sizeof(View) * (page.count));
-		v = page.view + page.count - 1;
+		page->count++;
+		page->view = realloc(page->view, sizeof(View) * (page->count));
+		v = page->view + page->count - 1;
 		
 		v->obj = obj;
-		v->page = &page;
+		v->page = &rich->page;
 		v->font = font;
 		
 		// parse opts, don't like it here.
@@ -299,8 +333,6 @@ generatepage(Rectangle r, Rich *rich)
 			sp = obj->data;
 		}
 	}
-	
-	return page;
 }
 
 Font *

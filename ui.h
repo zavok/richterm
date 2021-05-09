@@ -32,4 +32,5 @@ struct Page {
 };
 
 void drawview(Image *, View *);
+void drawpage(Image *, Page *);
 Point viewsize(View *);
