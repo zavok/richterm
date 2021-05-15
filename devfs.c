@@ -32,16 +32,18 @@ devfs_write(Req *r)
 {
 	File *f;
 	Devfsctl *dctl;
-	Object obj;
 	f = r->fid->file;
 	dctl = f->aux;
 	if (f == cons){
-		obj.type = strdup("text");
-		obj.opts = strdup("");
-		obj.count = r->ifcall.count;
-		obj.data = mallocz(obj.count + 1, 1);
-		memcpy(obj.data, r->ifcall.data, r->ifcall.count);
-		send(dctl->wc, &obj);
+		char *buf;
+		buf = mallocz(r->ifcall.count + 1, 1);
+		/*
+		 * + 1 is a hack to make sure string is \0 terminated
+		 * we should send a struct that includes both data and size
+		 * instead of simple char pointer.
+		 */
+		memcpy(buf, r->ifcall.data, r->ifcall.count);
+		send(dctl->wc, &buf);
 		r->ofcall.count = r->ifcall.count;
 		respond(r, nil);
 	} else if (f == consctl) {
@@ -59,7 +61,7 @@ initdevfs(void)
 	};
 	dctl = mallocz(sizeof(Devfsctl), 1);
 	
-	dctl->wc = chancreate(sizeof(Object), 0);
+	dctl->wc = chancreate(sizeof(char *), 0);
 	dctl->rc = chancreate(sizeof(int), 1024);
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	if (srv.tree == nil)

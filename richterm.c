@@ -93,7 +93,8 @@ usage(void)
 void
 threadmain(int argc, char **argv)
 {
-	Object ov, *olast;
+	Object *olast;
+	char *ov;
 	Rich rich;
 	int i;
 	Mousectl *mctl;
@@ -127,13 +128,15 @@ threadmain(int argc, char **argv)
 		"text",
 		"font=/lib/font/bit/lucida/unicode.24.font",
 		strdup("This is richterm\n"),
-		strlen("This is richterm\n")
+		strlen("This is richterm\n"),
+		"", "", "", "",
 	};
 	rich.obj[1] = (Object){
 		"text",
 		"font=/lib/font/bit/lucida/unicode.16.font",
 		strdup("The future of textual interfacing\n"),
-		strlen("The future of textual interfacing\n")
+		strlen("The future of textual interfacing\n"),
+		"", "", "", "",
 	};
 	rich.page.scroll = ZP;
 	rich.page.view = nil;
@@ -162,6 +165,7 @@ threadmain(int argc, char **argv)
 		{nil, nil, CHANEND},
 	};
 	for (;;) {
+		Object *obj;
 		switch(alt(alts)) {
 		case MOUSE:
 			break;
@@ -205,7 +209,11 @@ threadmain(int argc, char **argv)
 		case DEVFSWRITE:
 			rich.count++;
 			rich.obj = realloc(rich.obj, rich.count * sizeof(Object));
-			rich.obj[rich.count - 1] = ov;
+			obj = &(rich.obj[rich.count - 1]);
+			obj->data = ov;
+			obj->type = "text";
+			obj->opts = "";
+			obj->count = strlen(ov);
 
 			generatepage(screen->r, &rich);
 			draw(screen, screen->r, display->white, nil, ZP);
