@@ -1,3 +1,9 @@
+typedef struct Data Data;
+struct Data {
+	char *p;
+	long size;
+};
+
 typedef struct Devfsctl Devfsctl;
 struct Devfsctl {
 	Channel *rc;
@@ -12,10 +18,11 @@ struct Object {
 	char *data;
 	long count;
 	/* future fields */
-	char *text;
-	char *font;
-	char *link;
-	char *image;
+	Data text;
+	Data font;
+	Data link;
+	Data image;
 };
 
+Data strtodata(char *);
 Devfsctl * initdevfs(void);

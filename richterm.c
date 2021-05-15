@@ -129,14 +129,14 @@ threadmain(int argc, char **argv)
 		"font=/lib/font/bit/lucida/unicode.24.font",
 		strdup("This is richterm\n"),
 		strlen("This is richterm\n"),
-		"", "", "", "",
+		strtodata(""), strtodata(""), strtodata(""), strtodata(""),
 	};
 	rich.obj[1] = (Object){
 		"text",
 		"font=/lib/font/bit/lucida/unicode.16.font",
 		strdup("The future of textual interfacing\n"),
 		strlen("The future of textual interfacing\n"),
-		"", "", "", "",
+		strtodata(""), strtodata(""), strtodata(""), strtodata(""),
 	};
 	rich.page.scroll = ZP;
 	rich.page.view = nil;
@@ -394,4 +394,9 @@ scroll(Point p, Rich *r)
 	draw(screen, screen->r, display->white, nil, ZP);
 	drawpage(screen, &r->page);
 	flushimage(display, 1);
+}
+
+Data strtodata(char *str)
+{
+	return (Data){strdup(str), strlen(str)};
 }
