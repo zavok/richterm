@@ -247,7 +247,7 @@ generatepage(Rectangle r, Rich *rich)
 
 	char *bp, *sp, buf[BSIZE], *argc[2];
 	Object *obj;
-	int newline, ymax, argv;
+	int newline, tab, ymax, argv;
 	Point pt;
 	Page *page;
 	page = &rich->page;
@@ -263,8 +263,8 @@ generatepage(Rectangle r, Rich *rich)
 	while (obj < rich->obj + rich->count) {
 		View *v;
 		char *brkp;
-		
 		newline = 0;
+		tab = 0;
 		page->count++;
 		page->view = realloc(page->view, sizeof(View) * (page->count));
 		v = page->view + page->count - 1;
@@ -273,7 +273,11 @@ generatepage(Rectangle r, Rich *rich)
 		v->page = &rich->page;
 		v->font = font;
 		
-		// parse opts, don't like it here.
+		/* 
+		 * following code section parses opts
+		 * TODO: I don't like how opts are implemented,
+		 * think about rewriting it.
+		 */
 		strncpy(buf, obj->opts, BSIZE);
 		for (bp = buf; (bp != nil) && (argv = tokenize(bp, argc, 2) > 0); bp = argc[1]){
 			if (strstr(argc[0], "font") == argc[0]) {
@@ -293,6 +297,7 @@ generatepage(Rectangle r, Rich *rich)
 				newline = 1;
 				break;
 			case '\t':
+				tab = 1;
 				break;
 			}
 		}
@@ -306,12 +311,23 @@ generatepage(Rectangle r, Rich *rich)
 			pt.y + v->font->height));
 		
 		ymax = (ymax > v->r.max.y) ? ymax : v->r.max.y;
-
+		pt.x = v->r.max.x;
+		if (tab != 0) {
+			int nx, tl;
+			nx = r.min.x;
+			tl = stringwidth(font, "0000");
+			while (nx <= pt.x){
+				nx += tl;
+				if (nx > r.max.x) {
+					newline = 1;
+					break;
+				}
+			}
+			pt.x = nx;
+		}
 		if (newline != 0) {
 			pt.x = r.min.x;
 			pt.y = ymax;
-		} else {
-			pt.x = v->r.max.x;
 		}
 			
 		if (v->length >= obj->count - 1) {
