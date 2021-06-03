@@ -1,16 +1,12 @@
 typedef struct Data Data;
+
 struct Data {
 	char *p;
 	long size;
 };
 
-typedef struct Devfsctl Devfsctl;
-struct Devfsctl {
-	Channel *rc;
-	Channel *wc;
-};
-
 typedef struct Object Object;
+
 struct Object {
 	/* old fields */
 	char *type;
@@ -25,4 +21,22 @@ struct Object {
 };
 
 Data strtodata(char *);
+
+
+typedef struct Devfsctl Devfsctl;
+
+struct Devfsctl {
+	Channel *rc;
+	Channel *wc;
+};
+
 Devfsctl * initdevfs(void);
+
+
+typedef struct Fsctl Fsctl;
+
+struct Fsctl {
+	Channel *c;
+};
+
+Fsctl * initfs(void);

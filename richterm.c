@@ -30,6 +30,8 @@ Channel *pidchan;
 
 Devfsctl *dctl;
 
+Fsctl *fsctl;
+
 Fonts fonts;
 
 void generatepage(Rectangle, Rich *);
@@ -50,7 +52,9 @@ runcmd(void *args)
 
 	if ((dctl = initdevfs()) == nil)
 		sysfatal("initdevfs failed: %r");
-	
+	if ((fsctl = initfs()) == nil)
+		sysfatal("initfs failed: %r");
+
 	rfork(RFFDG);
 	close(0);
 	open("/dev/cons", OREAD);
