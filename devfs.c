@@ -64,8 +64,7 @@ initdevfs(void)
 	dctl->wc = chancreate(sizeof(char *), 0);
 	dctl->rc = chancreate(sizeof(int), 1024);
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
-	if (srv.tree == nil)
-		return nil;
+	if (srv.tree == nil) return nil;
 	cons = createfile(srv.tree->root, "cons", "richterm", 0666, dctl);
 	if (cons == nil) return nil;
 	consctl = createfile(srv.tree->root, "consctl", "richterm", 0666, dctl);

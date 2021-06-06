@@ -11,7 +11,14 @@ File *new;
 void
 fs_read(Req *r)
 {
-	respond(r, nil);
+	File *f;
+	Fsctl *fsctl;
+	f = r->fid->file;
+	fsctl = f->aux;
+	if (f == new) {
+		respond(r, "not implemented");
+	}
+	else respond(r, "what");
 }
 
 void
@@ -30,8 +37,10 @@ initfs(void)
 	};
 	fsctl = mallocz(sizeof(Fsctl), 1);
 	fsctl->c = chancreate(sizeof(int), 0);
-	srv.tree = alloctree("richterm", "richterm", DMDIR|555, nil);
+	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	if (srv.tree == nil) return nil;
-	new = createfile(srv.tree->root, "new", "richterm", 0666, nil);
+	new = createfile(srv.tree->root, "new", "richterm", 0666, fsctl);
+	if (new == nil) return nil;
+	threadpostmountsrv(&srv, nil, "/mnt/richterm", MREPL);
 	return fsctl;
 }
