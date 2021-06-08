@@ -2,6 +2,7 @@
 #include <libc.h>
 #include <fcall.h>
 #include <thread.h>
+#include <draw.h>
 #include <9p.h>
 
 #include "richterm.h"

@@ -2,6 +2,7 @@
 #include <libc.h>
 #include <fcall.h>
 #include <thread.h>
+#include <draw.h>
 #include <9p.h>
 
 #include "richterm.h"
@@ -39,6 +40,7 @@ initfs(void)
 	fsctl->c = chancreate(sizeof(int), 0);
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	if (srv.tree == nil) return nil;
+	fsctl->tree = srv.tree;
 	new = createfile(srv.tree->root, "new", "richterm", 0666, fsctl);
 	if (new == nil) return nil;
 	threadpostmountsrv(&srv, nil, "/mnt/richterm", MREPL);

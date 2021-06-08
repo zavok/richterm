@@ -2,6 +2,6 @@
 
 TARG=richterm
 OFILES=richterm.$O devfs.$O fs.$O
-HFILES=richterm.h ui.h
+HFILES=richterm.h
 
 </sys/src/cmd/mkone

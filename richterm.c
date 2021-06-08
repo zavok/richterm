@@ -9,21 +9,6 @@
 #include <9p.h>
 
 #include "richterm.h"
-#include "ui.h"
-
-typedef struct Rich Rich;
-struct Rich {
-	Object *obj;
-	long count;
-	Page page;
-};
-
-typedef struct Fonts Fonts;
-struct Fonts {
-	Font **data;
-	int size;
-	int count;
-};
 
 int hostpid = -1;
 Channel *pidchan;
@@ -35,8 +20,6 @@ Fsctl *fsctl;
 Fonts fonts;
 
 void generatepage(Rectangle, Rich *);
-Font* getfont(Fonts *, char *);
-void addfont(Fonts *, Font *);
 void shutdown(void);
 void send_interrupt(void);
 void runcmd(void *);
@@ -129,6 +112,8 @@ threadmain(int argc, char **argv)
 	rich.obj = malloc(sizeof(Object) * 2);
 	rich.count = 2;
 	rich.obj[0] = (Object){
+		nil,
+		"1",
 		"text",
 		"font=/lib/font/bit/lucida/unicode.24.font",
 		strdup("This is richterm\n"),
@@ -136,6 +121,8 @@ threadmain(int argc, char **argv)
 		strtodata(""), strtodata(""), strtodata(""), strtodata(""),
 	};
 	rich.obj[1] = (Object){
+		nil,
+		"2",
 		"text",
 		"font=/lib/font/bit/lucida/unicode.16.font",
 		strdup("The future of textual interfacing\n"),
@@ -212,12 +199,16 @@ threadmain(int argc, char **argv)
 			break;
 		case DEVFSWRITE:
 			rich.count++;
+			obj->id = smprint("%ld", rich.count);
 			rich.obj = realloc(rich.obj, rich.count * sizeof(Object));
 			obj = &(rich.obj[rich.count - 1]);
 			obj->data = ov;
 			obj->type = "text";
 			obj->opts = "";
 			obj->count = strlen(ov);
+
+			obj->dir = createfile(fsctl->tree->root, obj->id, "richterm", DMDIR|0555, fsctl);
+			/* TODO: add file for every field inside dir */
 
 			generatepage(screen->r, &rich);
 			draw(screen, screen->r, display->white, nil, ZP);
