@@ -199,9 +199,9 @@ threadmain(int argc, char **argv)
 			break;
 		case DEVFSWRITE:
 			rich.count++;
-			obj->id = smprint("%ld", rich.count);
 			rich.obj = realloc(rich.obj, rich.count * sizeof(Object));
 			obj = &(rich.obj[rich.count - 1]);
+			obj->id = smprint("%ld", rich.count);
 			obj->data = ov;
 			obj->type = "text";
 			obj->opts = "";
