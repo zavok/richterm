@@ -13,13 +13,15 @@ void
 fs_read(Req *r)
 {
 	File *f;
-	Fsctl *fsctl;
+	Faux *aux;
 	f = r->fid->file;
-	fsctl = f->aux;
+	aux = f->aux;
 	if (f == new) {
 		respond(r, "not implemented");
-	}
-	else respond(r, "what");
+	} else if (aux != nil) {
+		readbuf(r, aux->data->p, aux->data->n);
+		respond(r, nil);
+	} else respond(r, "f->aux is nil");
 }
 
 void
@@ -43,6 +45,6 @@ initfs(void)
 	fsctl->tree = srv.tree;
 	new = createfile(srv.tree->root, "new", "richterm", 0666, fsctl);
 	if (new == nil) return nil;
-	threadpostmountsrv(&srv, nil, "/mnt/richterm", MREPL);
+	threadpostmountsrv(&srv, "richterm", "/mnt/richterm", MREPL);
 	return fsctl;
 }

@@ -109,28 +109,12 @@ threadmain(int argc, char **argv)
 	if (initdraw(0, 0, "richterm") < 0)
 		sysfatal("%s: %r", argv0);
 
-	rich.obj = malloc(sizeof(Object) * 2);
-	rich.count = 2;
-	rich.obj[0] = (Object){
-		nil,
-		"1",
-		"text",
-		"font=/lib/font/bit/lucida/unicode.24.font",
-		strdup("This is richterm\n"),
-		strlen("This is richterm\n"),
-		strtodata(""), strtodata(""), strtodata(""), strtodata(""),
-	};
-	rich.obj[1] = (Object){
-		nil,
-		"2",
-		"text",
-		"font=/lib/font/bit/lucida/unicode.16.font",
-		strdup("The future of textual interfacing\n"),
-		strlen("The future of textual interfacing\n"),
-		strtodata(""), strtodata(""), strtodata(""), strtodata(""),
-	};
+	rich.obj = nil;
+	rich.count = 0;
+
 	rich.page.scroll = ZP;
 	rich.page.view = nil;
+
 	generatepage(screen->r, &rich);
 
 	draw(screen, screen->r, display->white, nil, ZP);
@@ -142,11 +126,6 @@ threadmain(int argc, char **argv)
 	if ((kctl = initkeyboard(nil)) == nil)
 		sysfatal("%s: %r", argv0);
 
-	// init /mnt fs for exposing internals
-
-	// launch a subprocess from cmd passed on args
-	// if args are empty, cmd = "rc"
-
 	enum {MOUSE, RESIZE, KBD, DEVFSWRITE, NONE};
 	Alt alts[5] = {
 		{mctl->c, &mv, CHANRCV},
@@ -157,6 +136,7 @@ threadmain(int argc, char **argv)
 	};
 	for (;;) {
 		Object *obj;
+		Faux *aux;
 		switch(alt(alts)) {
 		case MOUSE:
 			break;
@@ -186,11 +166,13 @@ threadmain(int argc, char **argv)
 				scroll(Pt(0, rich.page.scroll.y + Dy(screen->r) / 4), &rich);
 				break;
 			}
-			olast = rich.obj + rich.count - 1;
-			olast->count++;
-			olast->data = realloc(olast->data, olast->count + 1);
-			olast->data[olast->count - 1] = kv;
-			olast->data[olast->count] = 0;
+			if (rich.obj != nil) {
+				olast = rich.obj + rich.count - 1;
+				olast->text->n++;
+				olast->text->p = realloc(olast->text->p, olast->text->n + 1);
+				olast->text->p[olast->text->n - 1] = kv;
+				olast->text->p[olast->text->n] = 0;
+			}
 			generatepage(screen->r, &rich);
 			draw(screen, screen->r, display->white, nil, ZP);
 			drawpage(screen, &rich.page);
@@ -202,12 +184,21 @@ threadmain(int argc, char **argv)
 			rich.obj = realloc(rich.obj, rich.count * sizeof(Object));
 			obj = &(rich.obj[rich.count - 1]);
 			obj->id = smprint("%ld", rich.count);
-			obj->data = ov;
 			obj->type = "text";
 			obj->opts = "";
-			obj->count = strlen(ov);
 
-			obj->dir = createfile(fsctl->tree->root, obj->id, "richterm", DMDIR|0555, fsctl);
+			obj->dir = createfile(fsctl->tree->root,
+				obj->id, "richterm", DMDIR|0555, fsctl);
+
+			aux = mallocz(sizeof(Faux), 1);
+			aux->data = mallocz(sizeof(Data), 1);
+
+			aux->data->p = ov;
+			aux->data->n = strlen(ov);
+
+			obj->text = aux->data;
+
+			obj->ftext = createfile(obj->dir, "text", "richterm", 0666, aux);
 			/* TODO: add file for every field inside dir */
 
 			generatepage(screen->r, &rich);
@@ -253,6 +244,9 @@ generatepage(Rectangle r, Rich *rich)
 	int newline, tab, ymax, argv;
 	Point pt;
 	Page *page;
+	View *v;
+	char *brkp;
+
 	page = &rich->page;
 
 	page->count = 0;
@@ -260,12 +254,12 @@ generatepage(Rectangle r, Rich *rich)
 	pt = r.min;
 	ymax = 0;
 	
+	if (rich->obj == nil) return;
+
 	obj = rich->obj;
-	sp = obj->data;
+	sp = obj->text->p;
 	
 	while (obj < rich->obj + rich->count) {
-		View *v;
-		char *brkp;
 		newline = 0;
 		tab = 0;
 		page->count++;
@@ -290,7 +284,7 @@ generatepage(Rectangle r, Rich *rich)
 		}
 		
 		v->dp = sp;
-		v->length = obj->count;
+		v->length = obj->text->n; // obj->text->p - sp + 
 		
 		if ((brkp = strpbrk(v->dp, "\n\t")) != 0) {
 			v->length = brkp - v->dp;
@@ -333,15 +327,14 @@ generatepage(Rectangle r, Rich *rich)
 			pt.y = ymax;
 		}
 			
-		if (v->length >= obj->count - 1) {
-
+		if (v->length >= obj->text->n - 1) {
 			obj++;
-			sp = obj->data;
+			if (obj < rich->obj + rich->count) sp = obj->text->p;
 		}
 	}
+
 	rich->page.max.y = ymax;
 	rich->page.max.x = 0;
-
 }
 
 Font *
