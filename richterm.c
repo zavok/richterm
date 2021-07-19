@@ -136,7 +136,7 @@ threadmain(int argc, char **argv)
 	};
 	for (;;) {
 		Object *obj;
-		Faux *aux;
+		Faux *auxtext, *auxfont, *auxlink, *auximage;
 		switch(alt(alts)) {
 		case MOUSE:
 			break;
@@ -167,11 +167,14 @@ threadmain(int argc, char **argv)
 				break;
 			}
 			if (rich.obj != nil) {
+				/* TODO: make this utf8-aware */
+				Faux *aux;
 				olast = rich.obj + rich.count - 1;
-				olast->text->n++;
-				olast->text->p = realloc(olast->text->p, olast->text->n + 1);
-				olast->text->p[olast->text->n - 1] = kv;
-				olast->text->p[olast->text->n] = 0;
+				aux = olast->ftext->aux;
+				aux->data->n++;
+				aux->data->p = realloc(aux->data->p, aux->data->n + 1);
+				aux->data->p[aux->data->n - 1] = kv;
+				aux->data->p[aux->data->n] = 0;
 			}
 			generatepage(screen->r, &rich);
 			draw(screen, screen->r, display->white, nil, ZP);
@@ -184,31 +187,25 @@ threadmain(int argc, char **argv)
 			rich.obj = realloc(rich.obj, rich.count * sizeof(Object));
 			obj = &(rich.obj[rich.count - 1]);
 			obj->id = smprint("%ld", rich.count);
-			obj->type = "text";
-			obj->opts = "";
 
-			obj->dir = createfile(fsctl->tree->root,
-				obj->id, "richterm", DMDIR|0555, fsctl);
+			obj->dir = createfile(fsctl->tree->root, obj->id, "richterm", DMDIR|0555, nil);
 
-			aux = mallocz(sizeof(Faux), 1);
-			aux->data = mallocz(sizeof(Data), 1);
+			auxtext  = fauxalloc(ov);
+			auxfont  = fauxalloc(strdup(font->name));
+			auxlink  = fauxalloc(strdup(""));
+			auximage = fauxalloc(strdup(""));
 
-			aux->data->p = ov;
-			aux->data->n = strlen(ov);
-
-			obj->text = aux->data;
-
-			obj->ftext = createfile(obj->dir, "text", "richterm", 0666, aux);
-			/* TODO: add file for every field inside dir */
+			obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666, auxtext);
+			obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666, auxfont);
+			obj->flink  = createfile(obj->dir, "link",  "richterm", 0666, auxlink);
+			obj->fimage = createfile(obj->dir, "image", "richterm", 0666, auximage);
 
 			generatepage(screen->r, &rich);
 			draw(screen, screen->r, display->white, nil, ZP);
-
 			for (i = 0; i < rich.page.count; i++){
 				drawview(screen, &rich.page.view[i]);
 			}
 			flushimage(display, 1);
-
 			break;
 		case NONE:
 			break;
@@ -239,13 +236,14 @@ generatepage(Rectangle r, Rich *rich)
 {
 	#define BSIZE 4096
 
-	char *bp, *sp, buf[BSIZE], *argc[2];
+	char *sp;
 	Object *obj;
-	int newline, tab, ymax, argv;
+	int newline, tab, ymax;
 	Point pt;
 	Page *page;
 	View *v;
 	char *brkp;
+	Faux *aux;
 
 	page = &rich->page;
 
@@ -257,8 +255,8 @@ generatepage(Rectangle r, Rich *rich)
 	if (rich->obj == nil) return;
 
 	obj = rich->obj;
-	sp = obj->text->p;
-	
+	aux = obj->ftext->aux;
+	sp = aux->data->p;
 	while (obj < rich->obj + rich->count) {
 		newline = 0;
 		tab = 0;
@@ -269,22 +267,10 @@ generatepage(Rectangle r, Rich *rich)
 		v->obj = obj;
 		v->page = &rich->page;
 		v->font = font;
-		
-		/* 
-		 * following code section parses opts
-		 * TODO: I don't like how opts are implemented,
-		 * think about rewriting it.
-		 */
-		strncpy(buf, obj->opts, BSIZE);
-		for (bp = buf; (bp != nil) && (argv = tokenize(bp, argc, 2) > 0); bp = argc[1]){
-			if (strstr(argc[0], "font") == argc[0]) {
-				v->font = getfont(&fonts, argc[0] + 5);
-			}
-			if (argv == 1) break;
-		}
-		
+		// v->font = getfont(&fonts, ((Faux *)obj->ffont->aux)->data->p);
+	
 		v->dp = sp;
-		v->length = obj->text->n; // obj->text->p - sp + 
+		v->length = aux->data->n;
 		
 		if ((brkp = strpbrk(v->dp, "\n\t")) != 0) {
 			v->length = brkp - v->dp;
@@ -327,9 +313,12 @@ generatepage(Rectangle r, Rich *rich)
 			pt.y = ymax;
 		}
 			
-		if (v->length >= obj->text->n - 1) {
+		if (v->length >= aux->data->n - 1) {
 			obj++;
-			if (obj < rich->obj + rich->count) sp = obj->text->p;
+			if (obj < rich->obj + rich->count) {
+				aux = obj->ftext->aux;
+				sp = aux->data->p;
+			}
 		}
 	}
 
@@ -387,4 +376,15 @@ scroll(Point p, Rich *r)
 Data strtodata(char *str)
 {
 	return (Data){strdup(str), strlen(str)};
+}
+
+Faux *
+fauxalloc(char *str)
+{
+	Faux *aux;
+	aux = mallocz(sizeof(Faux), 1);
+	aux->data = mallocz(sizeof(Data), 1);
+	aux->data->p = str;
+	aux->data->n = strlen(str);
+	return aux;
 }

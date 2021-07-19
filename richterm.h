@@ -12,17 +12,10 @@ typedef struct Object Object;
 struct Object {
 	File *dir;
 	File *ftext;
+	File *ffont;
+	File *flink;
+	File *fimage;
 	char *id;
-	/* old fields */
-	char *type;
-	char *opts;
-	//char *data;
-	//long count;
-	/* future fields */
-	Data *text;
-	Data *font;
-	Data *link;
-	Data *image;
 };
 
 typedef struct Fonts Fonts;
@@ -91,3 +84,5 @@ typedef struct Faux Faux;
 struct Faux {
 	Data *data;
 };
+
+Faux * fauxalloc(char *);

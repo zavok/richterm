@@ -21,7 +21,7 @@ fs_read(Req *r)
 	} else if (aux != nil) {
 		readbuf(r, aux->data->p, aux->data->n);
 		respond(r, nil);
-	} else respond(r, "f->aux is nil");
+	} else respond(r, "fs_read: f->aux is nil");
 }
 
 void
