@@ -238,7 +238,7 @@ generatepage(Rich *rich)
 	#define BSIZE 4096
 
 	Rectangle r;
-	char *sp;
+	char *sp, buf[1024];
 	Object *obj;
 	int newline, tab, ymax;
 	Point pt;
@@ -270,8 +270,10 @@ generatepage(Rich *rich)
 		
 		v->obj = obj;
 		v->page = &rich->page;
-		v->font = font;
-		// v->font = getfont(&fonts, ((Faux *)obj->ffont->aux)->data->p);
+		/* TODO: check if font->data->n is too long */
+		memcpy(buf, ((Faux *)obj->ffont->aux)->data->p, ((Faux *)obj->ffont->aux)->data->n);
+		buf[((Faux *)obj->ffont->aux)->data->n] = '\0';
+		v->font = getfont(&fonts, buf);
 	
 		v->dp = sp;
 		v->length = aux->data->n;
@@ -339,7 +341,7 @@ getfont(struct Fonts *fonts, char *name)
 		if (strcmp(fonts->data[i]->name, name) == 0) return fonts->data[i];
 	}
 	if ((newfont = openfont(display, name)) == nil) {
-		fprint(2, "can't load font %s\n", name);
+		fprint(2, "%r\n");
 		newfont = font;
 	} else {
 		addfont(fonts, newfont);
