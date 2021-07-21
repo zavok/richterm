@@ -47,6 +47,7 @@ struct Page {
 	long count;
 	Point scroll;
 	Point max;
+	Rectangle r;
 };
 
 void drawview(Image *, View *);

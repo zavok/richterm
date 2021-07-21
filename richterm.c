@@ -19,7 +19,7 @@ Fsctl *fsctl;
 
 Fonts fonts;
 
-void generatepage(Rectangle, Rich *);
+void generatepage(Rich *);
 void shutdown(void);
 void send_interrupt(void);
 void runcmd(void *);
@@ -114,8 +114,8 @@ threadmain(int argc, char **argv)
 
 	rich.page.scroll = ZP;
 	rich.page.view = nil;
-
-	generatepage(screen->r, &rich);
+	rich.page.r = Rpt(addpt(screen->r.min, Pt(17, 1)), subpt(screen->r.max, Pt(1,1)));
+	generatepage(&rich);
 
 	draw(screen, screen->r, display->white, nil, ZP);
 	drawpage(screen, &rich.page);
@@ -143,7 +143,8 @@ threadmain(int argc, char **argv)
 		case RESIZE:
 			if (getwindow(display, Refnone) < 0)
 				sysfatal("resize failed: %r");
-			generatepage(screen->r, &rich);
+			rich.page.r = Rpt(addpt(screen->r.min, Pt(17, 1)), subpt(screen->r.max, Pt(1,1)));
+			generatepage(&rich);
 			draw(screen, screen->r, display->white, nil, ZP);
 			drawpage(screen, &rich.page);
 			flushimage(display, 1);
@@ -176,7 +177,7 @@ threadmain(int argc, char **argv)
 				aux->data->p[aux->data->n - 1] = kv;
 				aux->data->p[aux->data->n] = 0;
 			}
-			generatepage(screen->r, &rich);
+			generatepage(&rich);
 			draw(screen, screen->r, display->white, nil, ZP);
 			drawpage(screen, &rich.page);
 			flushimage(display, 1);
@@ -200,7 +201,7 @@ threadmain(int argc, char **argv)
 			obj->flink  = createfile(obj->dir, "link",  "richterm", 0666, auxlink);
 			obj->fimage = createfile(obj->dir, "image", "richterm", 0666, auximage);
 
-			generatepage(screen->r, &rich);
+			generatepage(&rich);
 			draw(screen, screen->r, display->white, nil, ZP);
 			for (i = 0; i < rich.page.count; i++){
 				drawview(screen, &rich.page.view[i]);
@@ -232,10 +233,11 @@ drawview(Image *dst, View *v)
 }
 
 void
-generatepage(Rectangle r, Rich *rich)
+generatepage(Rich *rich)
 {
 	#define BSIZE 4096
 
+	Rectangle r;
 	char *sp;
 	Object *obj;
 	int newline, tab, ymax;
@@ -246,6 +248,8 @@ generatepage(Rectangle r, Rich *rich)
 	Faux *aux;
 
 	page = &rich->page;
+
+	r = page->r;
 
 	page->count = 0;
 	page->scroll = rich->page.scroll;
