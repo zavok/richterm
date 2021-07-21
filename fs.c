@@ -27,7 +27,28 @@ fs_read(Req *r)
 void
 fs_write(Req *r)
 {
-	respond(r, nil);
+	char *buf;
+	long n, m;
+	File *f;
+	Faux *aux;
+	f = r->fid->file;
+	aux = f->aux;
+	if (f == new) {
+		respond(r, "not allowed");
+	} else if (aux != nil) {
+		/* TODO: this is not exactly finished */
+		n = r->ifcall.offset + r->ifcall.count;
+		m = (r->ifcall.offset > aux->data->n) ? aux->data->n : r->ifcall.offset;
+		buf = mallocz(n, 1);
+		memcpy(buf, aux->data->p, m);
+		memcpy(buf + r->ifcall.offset, r->ifcall.data, r->ifcall.count);
+		free(aux->data->p);
+		aux->data->p = buf;
+		aux->data->n = n;
+		r->ofcall.count = r->ifcall.count;
+		respond(r, nil);
+		return;
+	} else respond(r, "fs_write: f->aux is nil");
 }
 
 Fsctl *
