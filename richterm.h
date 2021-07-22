@@ -62,6 +62,10 @@ struct Rich {
 	Page page;
 };
 
+extern Rich rich;
+
+void generatepage(Rich *);
+
 typedef struct Devfsctl Devfsctl;
 
 struct Devfsctl {

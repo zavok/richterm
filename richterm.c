@@ -10,6 +10,8 @@
 
 #include "richterm.h"
 
+Rich rich;
+
 int hostpid = -1;
 Channel *pidchan;
 
@@ -19,7 +21,6 @@ Fsctl *fsctl;
 
 Fonts fonts;
 
-void generatepage(Rich *);
 void shutdown(void);
 void send_interrupt(void);
 void runcmd(void *);
@@ -82,7 +83,6 @@ threadmain(int argc, char **argv)
 {
 	Object *olast;
 	char *ov;
-	Rich rich;
 	int i;
 	Mousectl *mctl;
 	Keyboardctl *kctl;
@@ -96,7 +96,6 @@ threadmain(int argc, char **argv)
 	default:
 		usage();
 	} ARGEND
-
 
 	if(rfork(RFENVG) < 0)
 		sysfatal("rfork: %r");

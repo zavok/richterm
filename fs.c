@@ -47,7 +47,6 @@ fs_write(Req *r)
 		aux->data->n = n;
 		r->ofcall.count = r->ifcall.count;
 		respond(r, nil);
-		return;
 	} else respond(r, "fs_write: f->aux is nil");
 }
 
