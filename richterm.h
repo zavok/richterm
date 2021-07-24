@@ -18,6 +18,8 @@ struct Object {
 	char *id;
 };
 
+Object * mkobjectftree(Object *, File *, char *);
+
 typedef struct Fonts Fonts;
 
 struct Fonts {
@@ -65,6 +67,7 @@ struct Rich {
 extern Rich rich;
 
 void generatepage(Rich *);
+Object * newobject(Rich *);
 
 typedef struct Devfsctl Devfsctl;
 

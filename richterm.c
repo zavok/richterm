@@ -134,8 +134,6 @@ threadmain(int argc, char **argv)
 		{nil, nil, CHANEND},
 	};
 	for (;;) {
-		Object *obj;
-		Faux *auxtext, *auxfont, *auxlink, *auximage;
 		switch(alt(alts)) {
 		case MOUSE:
 			break;
@@ -183,23 +181,7 @@ threadmain(int argc, char **argv)
 			nbsend(dctl->rc, &kv);
 			break;
 		case DEVFSWRITE:
-			rich.count++;
-			rich.obj = realloc(rich.obj, rich.count * sizeof(Object));
-			obj = &(rich.obj[rich.count - 1]);
-			obj->id = smprint("%ld", rich.count);
-
-			obj->dir = createfile(fsctl->tree->root, obj->id, "richterm", DMDIR|0555, nil);
-
-			auxtext  = fauxalloc(ov);
-			auxfont  = fauxalloc(strdup(font->name));
-			auxlink  = fauxalloc(strdup(""));
-			auximage = fauxalloc(strdup(""));
-
-			obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666, auxtext);
-			obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666, auxfont);
-			obj->flink  = createfile(obj->dir, "link",  "richterm", 0666, auxlink);
-			obj->fimage = createfile(obj->dir, "image", "richterm", 0666, auximage);
-
+			mkobjectftree(newobject(&rich), fsctl->tree->root, ov);
 			generatepage(&rich);
 			draw(screen, screen->r, display->white, nil, ZP);
 			for (i = 0; i < rich.page.count; i++){
@@ -392,4 +374,34 @@ fauxalloc(char *str)
 	aux->data->p = str;
 	aux->data->n = strlen(str);
 	return aux;
+}
+
+Object *
+newobject(Rich *rich)
+{
+	Object *obj;
+	rich->count++;
+	rich->obj = realloc(rich->obj, rich->count * sizeof(Object));
+	obj = &(rich->obj[rich->count - 1]);
+	obj->id = smprint("%ld", rich->count);
+	return obj;
+}
+
+Object *
+mkobjectftree(Object *obj, File *root, char *text)
+{
+	Faux *auxtext, *auxfont, *auxlink, *auximage;
+
+	obj->dir = createfile(root, obj->id, "richterm", DMDIR|0555, nil);
+
+	auxtext  = fauxalloc(text);
+	auxfont  = fauxalloc(strdup(font->name));
+	auxlink  = fauxalloc(strdup(""));
+	auximage = fauxalloc(strdup(""));
+
+	obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666, auxtext);
+	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666, auxfont);
+	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666, auxlink);
+	obj->fimage = createfile(obj->dir, "image", "richterm", 0666, auximage);
+	return obj;
 }

@@ -17,7 +17,14 @@ fs_read(Req *r)
 	f = r->fid->file;
 	aux = f->aux;
 	if (f == new) {
-		respond(r, "not implemented");
+		if (r->ifcall.offset == 0) {
+			Object *obj;
+			Fsctl *fsctl;
+			fsctl = new->aux;
+			obj = mkobjectftree(newobject(&rich), fsctl->tree->root, strdup(""));
+			readstr(r, obj->id);
+		}
+		respond(r, nil);
 	} else if (aux != nil) {
 		readbuf(r, aux->data->p, aux->data->n);
 		respond(r, nil);
