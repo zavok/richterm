@@ -38,7 +38,7 @@ devfs_write(Req *r)
 	if (f == cons){
 		char *buf;
 		buf = mallocz(r->ifcall.count + 1, 1);
-		/*
+		/* TODO:
 		 * + 1 is a hack to make sure string is \0 terminated
 		 * we should send a struct that includes both data and size
 		 * instead of simple char pointer.
