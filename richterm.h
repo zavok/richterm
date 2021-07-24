@@ -5,8 +5,6 @@ struct Data {
 	long n;
 };
 
-Data strtodata(char *);
-
 typedef struct Object Object;
 
 struct Object {

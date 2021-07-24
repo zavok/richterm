@@ -349,11 +349,6 @@ scroll(Point p, Rich *r)
 	flushimage(display, 1);
 }
 
-Data strtodata(char *str)
-{
-	return (Data){strdup(str), strlen(str)};
-}
-
 Faux *
 fauxalloc(char *str)
 {
