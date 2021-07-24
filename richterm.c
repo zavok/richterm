@@ -25,6 +25,7 @@ void shutdown(void);
 void send_interrupt(void);
 void runcmd(void *);
 void scroll(Point, Rich *);
+void redraw(void);
 
 void
 runcmd(void *args)
@@ -83,7 +84,6 @@ threadmain(int argc, char **argv)
 {
 	Object *olast;
 	char *ov;
-	int i;
 	Mousectl *mctl;
 	Keyboardctl *kctl;
 	int rv[2];
@@ -114,11 +114,8 @@ threadmain(int argc, char **argv)
 	rich.page.scroll = ZP;
 	rich.page.view = nil;
 	rich.page.r = Rpt(addpt(screen->r.min, Pt(17, 1)), subpt(screen->r.max, Pt(1,1)));
-	generatepage(&rich);
 
-	draw(screen, screen->r, display->white, nil, ZP);
-	drawpage(screen, &rich.page);
-	flushimage(display, 1);
+	redraw();
 
 	if ((mctl = initmouse(nil, screen)) == nil)
 		sysfatal("%s: %r", argv0);
@@ -141,10 +138,7 @@ threadmain(int argc, char **argv)
 			if (getwindow(display, Refnone) < 0)
 				sysfatal("resize failed: %r");
 			rich.page.r = Rpt(addpt(screen->r.min, Pt(17, 1)), subpt(screen->r.max, Pt(1,1)));
-			generatepage(&rich);
-			draw(screen, screen->r, display->white, nil, ZP);
-			drawpage(screen, &rich.page);
-			flushimage(display, 1);
+			redraw();
 			break;
 		case KBD:
 			if (kv == 0x7f) shutdown();
@@ -174,19 +168,14 @@ threadmain(int argc, char **argv)
 				aux->data->p[aux->data->n - 1] = kv;
 				aux->data->p[aux->data->n] = 0;
 			}
-			generatepage(&rich);
-			draw(screen, screen->r, display->white, nil, ZP);
-			drawpage(screen, &rich.page);
-			flushimage(display, 1);
+			redraw();
 			nbsend(dctl->rc, &kv);
 			break;
 		case DEVFSWRITE:
 			mkobjectftree(newobject(&rich), fsctl->tree->root, ov);
 			generatepage(&rich);
 			draw(screen, screen->r, display->white, nil, ZP);
-			for (i = 0; i < rich.page.count; i++){
-				drawview(screen, &rich.page.view[i]);
-			}
+			drawpage(screen, &rich.page);
 			flushimage(display, 1);
 			break;
 		case NONE:
@@ -404,4 +393,13 @@ mkobjectftree(Object *obj, File *root, char *text)
 	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666, auxlink);
 	obj->fimage = createfile(obj->dir, "image", "richterm", 0666, auximage);
 	return obj;
+}
+
+void
+redraw(void)
+{
+	generatepage(&rich);
+	draw(screen, screen->r, display->white, nil, ZP);
+	drawpage(screen, &rich.page);
+	flushimage(display, 1);
 }
