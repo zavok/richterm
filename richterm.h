@@ -1,3 +1,6 @@
+void redraw(int);
+void drawscrollbar(void);
+
 typedef struct Data Data;
 
 struct Data {

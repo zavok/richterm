@@ -11,66 +11,17 @@
 #include "richterm.h"
 
 Rich rich;
-
 int hostpid = -1;
 Channel *pidchan;
-
 Devfsctl *dctl;
-
 Fsctl *fsctl;
-
 Fonts fonts;
+Image *Iscrollbar;
 
 void shutdown(void);
 void send_interrupt(void);
 void runcmd(void *);
 void scroll(Point, Rich *);
-void redraw(void);
-
-void
-runcmd(void *args)
-{
-	char **argv = args;
-	char *cmd;
-	
-	rfork(RFNAMEG);
-
-	if ((dctl = initdevfs()) == nil)
-		sysfatal("initdevfs failed: %r");
-	if ((fsctl = initfs()) == nil)
-		sysfatal("initfs failed: %r");
-
-	rfork(RFFDG);
-	close(0);
-	open("/dev/cons", OREAD);
-	close(1);
-	open("/dev/cons", OWRITE);
-	dup(1, 2);
-	
-	cmd = nil;
-	while (*argv != nil) {
-		if (cmd == nil) cmd = strdup(*argv);
-		else cmd = smprint("%s %q", cmd, *argv);
-		argv++;
-	}
-
-	procexecl(pidchan, "/bin/rc", "rcX", cmd == nil ? nil : "-c", cmd, nil);
-	sysfatal("%r");
-}
-
-void
-shutdown(void)
-{
-	send_interrupt();
-	threadexitsall(nil);
-}
-
-void
-send_interrupt(void)
-{
-	if(hostpid > 0)
-		postnote(PNGROUP, hostpid, "interrupt");
-}
 
 void
 usage(void)
@@ -115,7 +66,9 @@ threadmain(int argc, char **argv)
 	rich.page.view = nil;
 	rich.page.r = Rpt(addpt(screen->r.min, Pt(17, 1)), subpt(screen->r.max, Pt(1,1)));
 
-	redraw();
+	Iscrollbar = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x888888FF);
+
+	redraw(1);
 
 	if ((mctl = initmouse(nil, screen)) == nil)
 		sysfatal("%s: %r", argv0);
@@ -138,7 +91,7 @@ threadmain(int argc, char **argv)
 			if (getwindow(display, Refnone) < 0)
 				sysfatal("resize failed: %r");
 			rich.page.r = Rpt(addpt(screen->r.min, Pt(17, 1)), subpt(screen->r.max, Pt(1,1)));
-			redraw();
+			redraw(1);
 			break;
 		case KBD:
 			if (kv == 0x7f) shutdown();
@@ -168,15 +121,12 @@ threadmain(int argc, char **argv)
 				aux->data->p[aux->data->n - 1] = kv;
 				aux->data->p[aux->data->n] = 0;
 			}
-			redraw();
+			redraw(1);
 			nbsend(dctl->rc, &kv);
 			break;
 		case DEVFSWRITE:
 			mkobjectftree(newobject(&rich), fsctl->tree->root, ov);
-			generatepage(&rich);
-			draw(screen, screen->r, display->white, nil, ZP);
-			drawpage(screen, &rich.page);
-			flushimage(display, 1);
+			redraw(1);
 			break;
 		case NONE:
 			break;
@@ -298,7 +248,7 @@ generatepage(Rich *rich)
 		}
 	}
 
-	rich->page.max.y = ymax;
+	rich->page.max.y = ymax - r.min.y;
 	rich->page.max.x = 0;
 }
 
@@ -344,9 +294,7 @@ scroll(Point p, Rich *r)
 
 	r->page.scroll = p;
 
-	draw(screen, screen->r, display->white, nil, ZP);
-	drawpage(screen, &r->page);
-	flushimage(display, 1);
+	redraw(0);
 }
 
 Faux *
@@ -391,10 +339,78 @@ mkobjectftree(Object *obj, File *root, char *text)
 }
 
 void
-redraw(void)
+redraw(int regen)
 {
-	generatepage(&rich);
+	if (regen != 0) generatepage(&rich);
 	draw(screen, screen->r, display->white, nil, ZP);
 	drawpage(screen, &rich.page);
+	drawscrollbar();
 	flushimage(display, 1);
+}
+
+void
+drawscrollbar(void)
+{
+	double D;
+	Rectangle r, r2;
+	r = Rpt(
+	  addpt(Pt(1,1), screen->r.min),
+	  Pt(screen->r.min.x + 13, screen->r.max.y - 1)
+	);
+
+	D =  (double)rich.page.max.y / (double)Dy(rich.page.r);
+	if (D == 0) return;
+
+	r2 = rectaddpt(Rect(
+	  0,  rich.page.scroll.y / D,
+	  11, (rich.page.scroll.y + Dy(rich.page.r)) / D
+	), r.min);
+
+	draw(screen, r, Iscrollbar, nil, ZP);
+	draw(screen, r2, display->white, nil, ZP);
+}
+
+void
+runcmd(void *args)
+{
+	char **argv = args;
+	char *cmd;
+	
+	rfork(RFNAMEG);
+
+	if ((dctl = initdevfs()) == nil)
+		sysfatal("initdevfs failed: %r");
+	if ((fsctl = initfs()) == nil)
+		sysfatal("initfs failed: %r");
+
+	rfork(RFFDG);
+	close(0);
+	open("/dev/cons", OREAD);
+	close(1);
+	open("/dev/cons", OWRITE);
+	dup(1, 2);
+	
+	cmd = nil;
+	while (*argv != nil) {
+		if (cmd == nil) cmd = strdup(*argv);
+		else cmd = smprint("%s %q", cmd, *argv);
+		argv++;
+	}
+
+	procexecl(pidchan, "/bin/rc", "rcX", cmd == nil ? nil : "-c", cmd, nil);
+	sysfatal("%r");
+}
+
+void
+shutdown(void)
+{
+	send_interrupt();
+	threadexitsall(nil);
+}
+
+void
+send_interrupt(void)
+{
+	if(hostpid > 0)
+		postnote(PNGROUP, hostpid, "interrupt");
 }
