@@ -16,7 +16,7 @@ Channel *pidchan;
 Devfsctl *dctl;
 Fsctl *fsctl;
 Fonts fonts;
-Image *Iscrollbar;
+Image *Iscrollbar, *Ilink;
 
 void shutdown(void);
 void send_interrupt(void);
@@ -67,7 +67,7 @@ threadmain(int argc, char **argv)
 	rich.page.r = Rpt(addpt(screen->r.min, Pt(17, 1)), subpt(screen->r.max, Pt(1,1)));
 
 	Iscrollbar = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x888888FF);
-
+	Ilink = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DBlue);
 	redraw(1);
 
 	if ((mctl = initmouse(nil, screen)) == nil)
@@ -149,7 +149,7 @@ drawview(Image *dst, View *v)
 	Rectangle r;
 	r = rectsubpt(v->r, v->page->scroll);
 	draw(dst, r, display->white, nil, ZP);
-	stringn(dst, r.min, display->black, ZP, v->font, v->dp, v->length);
+	stringn(dst, r.min, v->color, ZP, v->font, v->dp, v->length);
 }
 
 void
@@ -189,6 +189,8 @@ generatepage(Rich *rich)
 		v = page->view + page->count - 1;
 		
 		v->obj = obj;
+		v->color = display->black;
+		if (((Faux *)obj->flink->aux)->data->n > 0) v->color = Ilink;
 		v->page = &rich->page;
 		/* TODO: check if font->data->n is too long */
 		memcpy(buf, ((Faux *)obj->ffont->aux)->data->p, ((Faux *)obj->ffont->aux)->data->n);
@@ -224,7 +226,7 @@ generatepage(Rich *rich)
 		if (tab != 0) {
 			int nx, tl;
 			nx = r.min.x;
-			tl = stringwidth(font, "0000");
+			tl = stringwidth(font, "0") * 4;
 			while (nx <= pt.x){
 				nx += tl;
 				if (nx > r.max.x) {

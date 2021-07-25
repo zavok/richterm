@@ -41,6 +41,7 @@ struct View {
 	char *dp;
 	long length;
 	Font *font;
+	Image *color;
 	Rectangle r;
 	Page *page;
 };
