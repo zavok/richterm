@@ -110,7 +110,7 @@ threadmain(int argc, char **argv)
 			}
 			if (mmode == 1) {
 				int y;
-				y = (mv.xy.y - rich.page.r.min.y) * (rich.page.max.y / Dy(rich.page.r));
+				y = (mv.xy.y - rich.page.r.min.y) * ((double)rich.page.max.y / Dy(rich.page.r));
 				scroll(Pt(rich.page.scroll.x, y), &rich);
 			}
 			break;
