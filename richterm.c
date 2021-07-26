@@ -213,7 +213,7 @@ generatepage(Rich *rich)
 		page->count++;
 		page->view = realloc(page->view, sizeof(View) * (page->count));
 		v = page->view + page->count - 1;
-		
+
 		v->obj = obj;
 		v->color = display->black;
 		if (((Faux *)obj->flink->aux)->data->n > 0) v->color = Ilink;
@@ -227,7 +227,7 @@ generatepage(Rich *rich)
 
 		v->dp = sp;
 		v->length = aux->data->n;
-		
+
 		if ((brkp = strpbrk(v->dp, "\n\t")) != 0) {
 			v->length = brkp - v->dp;
 			sp = v->dp + v->length + 1;
@@ -245,10 +245,10 @@ generatepage(Rich *rich)
 			v->length--;
 			sp = v->dp + v->length;
 		}
-		
+
 		v->r = Rpt(pt, Pt(pt.x + stringnwidth(v->font, v->dp, v->length),
 			pt.y + v->font->height));
-		
+
 		ymax = (ymax > v->r.max.y) ? ymax : v->r.max.y;
 		pt.x = v->r.max.x;
 		if (tab != 0) {
@@ -268,7 +268,7 @@ generatepage(Rich *rich)
 			pt.x = r.min.x;
 			pt.y = ymax;
 		}
-			
+
 		if (v->length >= aux->data->n - 1) {
 			obj++;
 			if (obj < rich->obj + rich->count) {
