@@ -18,6 +18,7 @@ Fsctl *fsctl;
 Fonts fonts;
 Image *Iscrollbar, *Ilink;
 
+void resize(void);
 void shutdown(void);
 void send_interrupt(void);
 void runcmd(void *);
@@ -64,10 +65,11 @@ threadmain(int argc, char **argv)
 
 	rich.page.scroll = ZP;
 	rich.page.view = nil;
-	rich.page.r = Rpt(addpt(screen->r.min, Pt(17, 1)), subpt(screen->r.max, Pt(1,1)));
 
 	Iscrollbar = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x888888FF);
 	Ilink = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DBlue);
+
+	resize();
 	redraw(1);
 
 	if ((mctl = initmouse(nil, screen)) == nil)
@@ -90,8 +92,7 @@ threadmain(int argc, char **argv)
 		case RESIZE:
 			if (getwindow(display, Refnone) < 0)
 				sysfatal("resize failed: %r");
-			rich.page.r = Rpt(addpt(screen->r.min, Pt(17, 1)), subpt(screen->r.max, Pt(1,1)));
-			redraw(1);
+			resize();
 			break;
 		case KBD:
 			if (kv == 0x7f) shutdown();
@@ -356,22 +357,18 @@ void
 drawscrollbar(void)
 {
 	double D;
-	Rectangle r, r2;
-	r = Rpt(
-	  addpt(Pt(1,1), screen->r.min),
-	  Pt(screen->r.min.x + 13, screen->r.max.y - 1)
-	);
+	Rectangle r;
 
 	D =  (double)rich.page.max.y / (double)Dy(rich.page.r);
 	if (D == 0) return;
 
-	r2 = rectaddpt(Rect(
+	r = rectaddpt(Rect(
 	  0,  rich.page.scroll.y / D,
 	  11, (rich.page.scroll.y + Dy(rich.page.r)) / D
-	), r.min);
+	), rich.page.rs.min);
 
-	draw(screen, r, Iscrollbar, nil, ZP);
-	draw(screen, r2, display->white, nil, ZP);
+	draw(screen, rich.page.rs, Iscrollbar, nil, ZP);
+	draw(screen, r, display->white, nil, ZP);
 }
 
 void
@@ -417,4 +414,18 @@ send_interrupt(void)
 {
 	if(hostpid > 0)
 		postnote(PNGROUP, hostpid, "interrupt");
+}
+
+void
+resize(void)
+{
+	rich.page.rs = Rpt(
+	  addpt(Pt(1,1), screen->r.min),
+	  Pt(screen->r.min.x + 13, screen->r.max.y - 1)
+	);
+	rich.page.r = Rpt(
+	  addpt(screen->r.min, Pt(17, 1)),
+	  subpt(screen->r.max, Pt(1,1))
+	);
+	redraw(1);
 }
