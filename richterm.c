@@ -158,7 +158,7 @@ generatepage(Rich *rich)
 	#define BSIZE 4096
 
 	Rectangle r;
-	char *sp, buf[1024];
+	char *sp, *buf;
 	Object *obj;
 	int newline, tab, ymax;
 	Point pt;
@@ -192,11 +192,13 @@ generatepage(Rich *rich)
 		v->color = display->black;
 		if (((Faux *)obj->flink->aux)->data->n > 0) v->color = Ilink;
 		v->page = &rich->page;
-		/* TODO: check if font->data->n is too long */
+
+		buf = mallocz(((Faux *)obj->ffont->aux)->data->n + 1, 1);
 		memcpy(buf, ((Faux *)obj->ffont->aux)->data->p, ((Faux *)obj->ffont->aux)->data->n);
 		buf[((Faux *)obj->ffont->aux)->data->n] = '\0';
 		v->font = getfont(&fonts, buf);
-	
+		free(buf);
+
 		v->dp = sp;
 		v->length = aux->data->n;
 		
