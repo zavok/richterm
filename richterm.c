@@ -38,7 +38,7 @@ threadmain(int argc, char **argv)
 	char *ov;
 	Mousectl *mctl;
 	Keyboardctl *kctl;
-	int rv[2];
+	int rv[2], mmode;
 	Mouse mv;
 	Rune kv;
 	ARGBEGIN{
@@ -66,6 +66,8 @@ threadmain(int argc, char **argv)
 	rich.page.scroll = ZP;
 	rich.page.view = nil;
 
+	mmode = 0;
+
 	Iscrollbar = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x888888FF);
 	Ilink = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DBlue);
 
@@ -88,6 +90,29 @@ threadmain(int argc, char **argv)
 	for (;;) {
 		switch(alt(alts)) {
 		case MOUSE:
+			if (mv.buttons == 0) mmode = 0;
+			if (mv.buttons == 8) {
+				scroll(subpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+				break;
+			}
+			if (mv.buttons == 16) {
+				scroll(addpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+				break;
+			}
+			if (ptinrect(mv.xy, rich.page.rs) != 0) {
+				if (mv.buttons == 1) {
+					scroll(subpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+				} else if (mv.buttons == 4) {
+					scroll(addpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+				} else if (mv.buttons == 2) {
+					mmode = 1;
+				}
+			}
+			if (mmode == 1) {
+				int y;
+				y = (mv.xy.y - rich.page.r.min.y) * (rich.page.max.y / Dy(rich.page.r));
+				scroll(Pt(rich.page.scroll.x, y), &rich);
+			}
 			break;
 		case RESIZE:
 			if (getwindow(display, Refnone) < 0)
