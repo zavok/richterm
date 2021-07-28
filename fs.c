@@ -8,6 +8,16 @@
 #include "richterm.h"
 
 File *new;
+Object *newobj;
+
+void
+fs_open(Req *r)
+{	
+	Fsctl *fsctl;
+	fsctl = new->aux;
+	newobj = mkobjectftree(newobject(&rich), fsctl->tree->root, strdup(""));
+	respond(r, nil);
+}
 
 void
 fs_read(Req *r)
@@ -17,13 +27,8 @@ fs_read(Req *r)
 	f = r->fid->file;
 	aux = f->aux;
 	if (f == new) {
-		if (r->ifcall.offset == 0) {
-			Object *obj;
-			Fsctl *fsctl;
-			fsctl = new->aux;
-			obj = mkobjectftree(newobject(&rich), fsctl->tree->root, strdup(""));
-			readstr(r, obj->id);
-		}
+		if (newobj != nil)
+			readstr(r, newobj->id);
 		respond(r, nil);
 	} else if (aux != nil) {
 		readbuf(r, aux->data->p, aux->data->n);
@@ -64,9 +69,11 @@ initfs(void)
 {
 	Fsctl *fsctl;
 	static Srv srv = {
-		.read = fs_read,
+		.open  = fs_open,
+		.read  = fs_read,
 		.write = fs_write,
 	};
+	newobj = nil;
 	fsctl = mallocz(sizeof(Fsctl), 1);
 	fsctl->c = chancreate(sizeof(int), 0);
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
