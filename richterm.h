@@ -62,6 +62,7 @@ Point viewsize(View *);
 typedef struct Rich Rich;
 
 struct Rich {
+	QLock *l;
 	Object *obj;
 	long count;
 	Page page;

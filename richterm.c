@@ -60,11 +60,17 @@ threadmain(int argc, char **argv)
 	if (initdraw(0, 0, "richterm") < 0)
 		sysfatal("%s: %r", argv0);
 
+	rich.l = mallocz(sizeof(QLock), 1);
+
+	qlock(rich.l);
+
 	rich.obj = nil;
 	rich.count = 0;
 
 	rich.page.scroll = ZP;
 	rich.page.view = nil;
+
+	qunlock(rich.l);
 
 	mmode = 0;
 
@@ -138,6 +144,8 @@ threadmain(int argc, char **argv)
 				break;
 			}
 			if (rich.obj != nil) {
+				qlock(rich.l);
+
 				/* TODO: make this utf8-aware */
 				Faux *aux;
 				olast = rich.obj + rich.count - 1;
@@ -146,6 +154,8 @@ threadmain(int argc, char **argv)
 				aux->data->p = realloc(aux->data->p, aux->data->n + 1);
 				aux->data->p[aux->data->n - 1] = kv;
 				aux->data->p[aux->data->n] = 0;
+
+				qunlock(rich.l);
 			}
 			redraw(1);
 			nbsend(dctl->rc, &kv);
@@ -193,6 +203,8 @@ generatepage(Rich *rich)
 	char *brkp;
 	Faux *aux;
 
+	qlock(rich->l);
+
 	page = &rich->page;
 
 	r = page->r;
@@ -202,7 +214,10 @@ generatepage(Rich *rich)
 	pt = r.min;
 	ymax = 0;
 	
-	if (rich->obj == nil) return;
+	if (rich->obj == nil) {
+		qunlock(rich->l);
+		return;
+	}
 
 	obj = rich->obj;
 	aux = obj->ftext->aux;
@@ -280,6 +295,7 @@ generatepage(Rich *rich)
 
 	rich->page.max.y = ymax - r.min.y;
 	rich->page.max.x = 0;
+	qunlock(rich->l);
 }
 
 Font *
@@ -342,10 +358,12 @@ Object *
 newobject(Rich *rich)
 {
 	Object *obj;
+	qlock(rich->l);
 	rich->count++;
 	rich->obj = realloc(rich->obj, rich->count * sizeof(Object));
 	obj = &(rich->obj[rich->count - 1]);
 	obj->id = smprint("%ld", rich->count);
+	qunlock(rich->l);
 	return obj;
 }
 
