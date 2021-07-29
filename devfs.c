@@ -32,19 +32,13 @@ void
 devfs_write(Req *r)
 {
 	File *f;
-	Devfsctl *dctl;
 	f = r->fid->file;
-	dctl = f->aux;
 	if (f == cons){
 		char *buf;
 		buf = mallocz(r->ifcall.count + 1, 1);
-		/* TODO:
-		 * + 1 is a hack to make sure string is \0 terminated
-		 * we should send a struct that includes both data and size
-		 * instead of simple char pointer.
-		 */
 		memcpy(buf, r->ifcall.data, r->ifcall.count);
-		send(dctl->wc, &buf);
+		mkobjectftree(newobject(&rich), fsctl->tree->root, buf);
+		redraw(1);
 		r->ofcall.count = r->ifcall.count;
 		respond(r, nil);
 	} else if (f == consctl) {

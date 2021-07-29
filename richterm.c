@@ -35,7 +35,6 @@ void
 threadmain(int argc, char **argv)
 {
 	Object *olast;
-	char *ov;
 	Mousectl *mctl;
 	Keyboardctl *kctl;
 	int rv[2], mmode;
@@ -49,17 +48,6 @@ threadmain(int argc, char **argv)
 		usage();
 	} ARGEND
 
-	if(rfork(RFENVG) < 0)
-		sysfatal("rfork: %r");
-	atexit(shutdown);
-
-	pidchan = chancreate(sizeof(int), 0);
-	proccreate(runcmd, argv, 16 * 1024);
-	hostpid = recvul(pidchan);
-
-	if (initdraw(0, 0, "richterm") < 0)
-		sysfatal("%s: %r", argv0);
-
 	rich.l = mallocz(sizeof(QLock), 1);
 
 	qlock(rich.l);
@@ -71,6 +59,17 @@ threadmain(int argc, char **argv)
 	rich.page.view = nil;
 
 	qunlock(rich.l);
+
+	if(rfork(RFENVG) < 0)
+		sysfatal("rfork: %r");
+	atexit(shutdown);
+
+	pidchan = chancreate(sizeof(int), 0);
+	proccreate(runcmd, argv, 16 * 1024);
+	hostpid = recvul(pidchan);
+
+	if (initdraw(0, 0, "richterm") < 0)
+		sysfatal("%s: %r", argv0);
 
 	mmode = 0;
 
@@ -90,7 +89,6 @@ threadmain(int argc, char **argv)
 		{mctl->c, &mv, CHANRCV},
 		{mctl->resizec, rv, CHANRCV},
 		{kctl->c, &kv, CHANRCV},
-		{dctl->wc, &ov, CHANRCV},
 		{nil, nil, CHANEND},
 	};
 	for (;;) {
@@ -160,10 +158,6 @@ threadmain(int argc, char **argv)
 			}
 			redraw(1);
 			nbsend(dctl->rc, &kv);
-			break;
-		case DEVFSWRITE:
-			mkobjectftree(newobject(&rich), fsctl->tree->root, ov);
-			redraw(1);
 			break;
 		case NONE:
 			break;

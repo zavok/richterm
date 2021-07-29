@@ -89,6 +89,8 @@ struct Fsctl {
 	Tree *tree;
 };
 
+extern Fsctl *fsctl;
+
 Fsctl * initfs(void);
 
 typedef struct Faux Faux;
