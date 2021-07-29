@@ -124,6 +124,7 @@ threadmain(int argc, char **argv)
 			if (getwindow(display, Refnone) < 0)
 				sysfatal("resize failed: %r");
 			resize();
+			redraw(1);
 			break;
 		case KBD:
 			if (kv == 0x7f) shutdown();
@@ -174,9 +175,11 @@ void
 drawpage(Image *dst, Page *p)
 {
 	int i;
+	qlock(rich.l);
 	for (i = 0; i < p->count; i++) {
 		drawview(dst, p->view + i);
 	}
+	qunlock(rich.l);
 }
 
 void
@@ -295,6 +298,7 @@ generatepage(Rich *rich)
 
 	rich->page.max.y = ymax - r.min.y;
 	rich->page.max.x = 0;
+
 	qunlock(rich->l);
 }
 
@@ -372,6 +376,8 @@ mkobjectftree(Object *obj, File *root, char *text)
 {
 	Faux *auxtext, *auxfont, *auxlink, *auximage;
 
+	qlock(rich.l);
+
 	obj->dir = createfile(root, obj->id, "richterm", DMDIR|0555, nil);
 
 	auxtext  = fauxalloc(text);
@@ -383,6 +389,7 @@ mkobjectftree(Object *obj, File *root, char *text)
 	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666, auxfont);
 	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666, auxlink);
 	obj->fimage = createfile(obj->dir, "image", "richterm", 0666, auximage);
+	qunlock(rich.l);
 	return obj;
 }
 
@@ -470,5 +477,4 @@ resize(void)
 	  addpt(screen->r.min, Pt(17, 1)),
 	  subpt(screen->r.max, Pt(1,1))
 	);
-	redraw(1);
 }

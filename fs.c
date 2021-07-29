@@ -31,7 +31,9 @@ fs_read(Req *r)
 			readstr(r, newobj->id);
 		respond(r, nil);
 	} else if (aux != nil) {
+		qlock(rich.l);
 		readbuf(r, aux->data->p, aux->data->n);
+		qunlock(rich.l);
 		respond(r, nil);
 	} else respond(r, "fs_read: f->aux is nil");
 }
@@ -48,6 +50,7 @@ fs_write(Req *r)
 	if (f == new) {
 		respond(r, "not allowed");
 	} else if (aux != nil) {
+		qlock(rich.l);
 		/* TODO: this is not exactly finished */
 		n = r->ifcall.offset + r->ifcall.count;
 		m = (r->ifcall.offset > aux->data->n) ? aux->data->n : r->ifcall.offset;
@@ -59,6 +62,7 @@ fs_write(Req *r)
 		aux->data->n = n;
 		r->ofcall.count = r->ifcall.count;
 		respond(r, nil);
+		qunlock(rich.l);
 		generatepage(&rich);
 		/* there should be a call to redraw(), probably */
 	} else respond(r, "fs_write: f->aux is nil");
