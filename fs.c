@@ -63,7 +63,8 @@ fs_write(Req *r)
 		r->ofcall.count = r->ifcall.count;
 		respond(r, nil);
 		qunlock(rich.l);
-		generatepage(&rich);
+		//generatepage(&rich);
+		redraw(1);
 		/* there should be a call to redraw(), probably */
 	} else respond(r, "fs_write: f->aux is nil");
 }

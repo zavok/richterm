@@ -60,13 +60,7 @@ threadmain(int argc, char **argv)
 
 	qunlock(rich.l);
 
-	if(rfork(RFENVG) < 0)
-		sysfatal("rfork: %r");
-	atexit(shutdown);
 
-	pidchan = chancreate(sizeof(int), 0);
-	proccreate(runcmd, argv, 16 * 1024);
-	hostpid = recvul(pidchan);
 
 	if (initdraw(0, 0, "richterm") < 0)
 		sysfatal("%s: %r", argv0);
@@ -78,6 +72,14 @@ threadmain(int argc, char **argv)
 
 	resize();
 	redraw(1);
+
+	if(rfork(RFENVG) < 0)
+		sysfatal("rfork: %r");
+	atexit(shutdown);
+
+	pidchan = chancreate(sizeof(int), 0);
+	proccreate(runcmd, argv, 16 * 1024);
+	hostpid = recvul(pidchan);
 
 	if ((mctl = initmouse(nil, screen)) == nil)
 		sysfatal("%s: %r", argv0);
