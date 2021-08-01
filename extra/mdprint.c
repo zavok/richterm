@@ -6,9 +6,13 @@
 char * newobj(void);
 void parse(char);
 void purge(void);
+int setfield(char *, char *, char *);
 
 int newblock = 1;
+int header = 0;
 String *bbuf;
+
+char *root = "/mnt/richterm";
 
 void
 main(int argc, char **argv)
@@ -37,20 +41,26 @@ parse(char c)
 	purgeblock = 0;
 
 	if (newblock != 0) {
-		newblock = 0;
-		/* ... */
-	} else {
-		/* ... */
+		switch(c) {
+		case '#':
+			header++;
+			break;
+		case ' ':
+			if (header == 0) newblock = 0;
+			break;
+		default:
+			newblock = 0;
+		}
+	} 
+	if (newblock == 0){
+		bbuf = s_nappend(bbuf, &c, 1);
+		if (c == '\n') purgeblock = 1;
 	}
-	
-	bbuf = s_nappend(bbuf, &c, 1);
-
-	if (c == '\n') purgeblock = 1;
-
 	if (purgeblock != 0) {
-		newblock = 1;
-		/* ... */
 		purge();
+		newblock = 1;
+		header = 0;
+		/* ... */
 		bbuf = s_reset(bbuf);
 	}
 }
@@ -58,25 +68,38 @@ parse(char c)
 void
 purge(void)
 {
-	char *id, *path;
-	int td;
-	usize n, size;
+	char *id;
 
 	id = newobj();
-	path = smprint("/mnt/richterm/%s/text", id);
+	setfield(id, "text", s_to_c(bbuf));
+	switch (header) {
+	case 1:
+		setfield(id, "font", "/lib/font/bit/lucida/unicode.20.font");
+		break;
+	case 2:
+		setfield(id, "font", "/lib/font/bit/lucida/unicode.14.font");
+		break;
+	case 3:
+		setfield(id, "font", "/lib/font/bit/lucida/unicode.12.font");
+		break;
+	}
+	free(id);
+}
 
-	td = open(path, OWRITE);
-	if (td < 0) sysfatal("%r");
-
-	size = bbuf->end - bbuf->base;
-
-	n = write(td, bbuf->base, size);
-
-	if (n != size)
-		sysfatal("write failed: %r");
-	close(td);
+int
+setfield(char *id, char *field, char *value)
+{
+	char *path;
+	int fd;
+	usize n;
+	path = smprint("%s/%s/%s", root, id, field);
+	fd = open(path, OWRITE);
+	if (fd < 0) sysfatal("%r");
+	n = write(fd, value, strlen(value));
+	if (n != strlen(value)) sysfatal("write failed: %r");
+	close(fd);
 	free(path);
-	
+	return 0;
 }
 
 char *
