@@ -23,6 +23,8 @@ void shutdown(void);
 void send_interrupt(void);
 void runcmd(void *);
 void scroll(Point, Rich *);
+int mouse(Mouse, int);
+View * getview(Point p);
 
 void
 usage(void)
@@ -40,6 +42,7 @@ threadmain(int argc, char **argv)
 	int rv[2], mmode;
 	Mouse mv;
 	Rune kv;
+	Data dv;
 	ARGBEGIN{
 	case 'D':
 		chatty9p++;
@@ -54,6 +57,8 @@ threadmain(int argc, char **argv)
 
 	rich.obj = nil;
 	rich.count = 0;
+	dv.n = 0;
+	dv.p = nil;
 
 	rich.page.scroll = ZP;
 	rich.page.view = nil;
@@ -96,29 +101,7 @@ threadmain(int argc, char **argv)
 	for (;;) {
 		switch(alt(alts)) {
 		case MOUSE:
-			if (mv.buttons == 0) mmode = 0;
-			if (mv.buttons == 8) {
-				scroll(subpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
-				break;
-			}
-			if (mv.buttons == 16) {
-				scroll(addpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
-				break;
-			}
-			if (ptinrect(mv.xy, rich.page.rs) != 0) {
-				if (mv.buttons == 1) {
-					scroll(subpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
-				} else if (mv.buttons == 4) {
-					scroll(addpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
-				} else if (mv.buttons == 2) {
-					mmode = 1;
-				}
-			}
-			if (mmode == 1) {
-				int y;
-				y = (mv.xy.y - rich.page.r.min.y) * ((double)rich.page.max.y / Dy(rich.page.r));
-				scroll(Pt(rich.page.scroll.x, y), &rich);
-			}
+			mmode = mouse(mv, mmode);
 			break;
 		case RESIZE:
 			if (getwindow(display, Refnone) < 0)
@@ -145,26 +128,88 @@ threadmain(int argc, char **argv)
 				break;
 			}
 			if (rich.obj != nil) {
+				Faux *aux;
+
 				qlock(rich.l);
 
-				/* TODO: make this utf8-aware */
-				Faux *aux;
 				olast = rich.obj + rich.count - 1;
 				aux = olast->ftext->aux;
-				aux->data->n++;
+				aux->data->n+=runelen(kv);
 				aux->data->p = realloc(aux->data->p, aux->data->n + 1);
-				aux->data->p[aux->data->n - 1] = kv;
+				runetochar(aux->data->p + aux->data->n - 1, &kv);
 				aux->data->p[aux->data->n] = 0;
 
 				qunlock(rich.l);
 			}
 			redraw(1);
-			nbsend(dctl->rc, &kv);
+			dv.p = mallocz(UTFmax, 1);
+			runetochar(dv.p, &kv);
+			dv.n = runelen(kv);
+			nbsend(dctl->rc, &dv);
 			break;
 		case NONE:
 			break;
 		}
 	}
+}
+
+int
+mouse(Mouse mv, int mmode)
+{
+	if (mv.buttons == 0) mmode = 0;
+	if (mv.buttons == 8) {
+		scroll(subpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+		return mmode;
+	}
+	if (mv.buttons == 16) {
+		scroll(addpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+		return mmode;
+	}
+	if (ptinrect(mv.xy, rich.page.rs) != 0) { /* scrollbar */
+		if (mv.buttons == 1) {
+			scroll(subpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+		} else if (mv.buttons == 4) {
+			scroll(addpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+		} else if (mv.buttons == 2) {
+			mmode = 1;
+		}
+	}
+	if (mmode == 1) {
+		int y;
+		y = (mv.xy.y - rich.page.r.min.y) * ((double)rich.page.max.y / Dy(rich.page.r));
+		scroll(Pt(rich.page.scroll.x, y), &rich);
+	} else { /* text area */
+		if (mv.buttons == 1) {
+			View *view;
+			Object *obj;
+			Faux *linkaux;
+			view = getview(mv.xy);
+			obj = nil;
+			linkaux = nil;
+			if (view != nil) obj = view->obj;
+			if (obj != nil) linkaux = obj->flink->aux;
+			if (linkaux->data->n > 0) {
+				Data dv;
+				dv.n = linkaux->data->n;
+				dv.p = malloc(linkaux->data->n);
+				memcpy(dv.p, linkaux->data->p, dv.n);
+				nbsend(dctl->rc, &dv);
+			}
+		}
+	}
+
+	return mmode;
+}
+
+View *
+getview(Point p)
+{
+	int i;
+	for (i = 0; i < rich.page.count; i++) {
+	 if (ptinrect(p, rich.page.view[i].r) != 0)
+		return &(rich.page.view[i]);
+	}
+	return nil;
 }
 
 void
