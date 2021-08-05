@@ -188,7 +188,7 @@ mouse(Mouse mv, int mmode)
 			linkaux = nil;
 			if (view != nil) obj = view->obj;
 			if (obj != nil) linkaux = obj->flink->aux;
-			if (linkaux->data->n > 0) {
+			if ((linkaux != nil) && (linkaux->data->n > 0)) {
 				Data dv;
 				dv.n = linkaux->data->n;
 				dv.p = malloc(linkaux->data->n);
@@ -405,9 +405,10 @@ newobject(Rich *rich)
 	Object *obj;
 	qlock(rich->l);
 	rich->count++;
+	rich->idcount++;
 	rich->obj = realloc(rich->obj, rich->count * sizeof(Object));
 	obj = &(rich->obj[rich->count - 1]);
-	obj->id = smprint("%ld", rich->count);
+	obj->id = smprint("%ld", rich->idcount);
 	qunlock(rich->l);
 	return obj;
 }

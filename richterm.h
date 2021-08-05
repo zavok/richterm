@@ -65,6 +65,7 @@ struct Rich {
 	QLock *l;
 	Object *obj;
 	long count;
+	long idcount;
 	Page page;
 };
 
