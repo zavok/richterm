@@ -17,25 +17,28 @@ ctlcmd(char *buf)
 	char *args[256];
 	n = tokenize(buf, args, 256);
 	if (n <= 0) return "expected a command";
-	if (strcmp(args[0], "test") == 0) return "test!";
-	if (strcmp(args[0], "clear") == 0) {
-		int i;
-		Object *obj;
-		for (i = 0; i < rich.count; i++) {
-			obj = rich.obj + i;
-			removefile(obj->ftext);
-			removefile(obj->ffont);
-			removefile(obj->flink);
-			removefile(obj->fimage);
-			removefile(obj->dir);
+	if (strcmp(args[0], "remove") == 0) {
+		int i, j;
+		for (i = 0; i < n; i++) {
+			for (j = 0; j < rich.count; j++) {
+				if (strcmp(rich.obj[j].id, args[i]) == 0) {
+					Object *sp, *tp;
+					rmobjectftree(&rich.obj[j]);
+					sp = &rich.obj[j];
+					tp = &rich.obj[j+1];
+					memcpy(sp, tp, (rich.count - j - 1) * sizeof(Object));
+					rich.count--;
+					break;
+				}
+			}
 		}
-
+	} else if (strcmp(args[0], "clear") == 0) {
+		for (rich.count--; rich.count >= 0; rich.count--)
+			rmobjectftree(rich.obj + rich.count);
 		rich.count = 0;
 		rich.obj = realloc(rich.obj, 0);
-
-		return nil;
-	}
-	return "not implemented";
+	} else return "unknown command";
+	return nil;
 }
 
 void

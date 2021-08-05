@@ -20,6 +20,7 @@ struct Object {
 };
 
 Object * mkobjectftree(Object *, File *, char *);
+void rmobjectftree(Object *);
 
 typedef struct Fonts Fonts;
 

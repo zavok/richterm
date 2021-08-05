@@ -436,6 +436,16 @@ mkobjectftree(Object *obj, File *root, char *text)
 }
 
 void
+rmobjectftree(Object *obj)
+{
+	removefile(obj->ftext);
+	removefile(obj->ffont);
+	removefile(obj->flink);
+	removefile(obj->fimage);
+	removefile(obj->dir);
+}
+
+void
 redraw(int regen)
 {
 	if (regen != 0) generatepage(&rich);
