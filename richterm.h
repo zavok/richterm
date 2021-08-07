@@ -17,10 +17,14 @@ struct Object {
 	File *flink;
 	File *fimage;
 	char *id;
+	Data *dtext;
+	Data *dfont;
+	Data *dlink;
+	Data *dimage;
 	Font *font;
 };
 
-Object * mkobjectftree(Object *, File *, char *);
+Object * mkobjectftree(Object *, File *);
 void rmobjectftree(Object *);
 
 typedef struct Fonts Fonts;
@@ -77,7 +81,7 @@ struct Rich {
 extern Rich rich;
 
 void generatepage(Rich *);
-Object * newobject(Rich *);
+Object * newobject(Rich *, char *);
 
 typedef struct Devfsctl Devfsctl;
 
@@ -114,4 +118,4 @@ enum {
 	FT_IMAGE
 };
 
-Faux * fauxalloc(Object *, char *, int);
+Faux * fauxalloc(Object *, Data *, int);

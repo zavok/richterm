@@ -38,7 +38,7 @@ devfs_write(Req *r)
 		char *buf;
 		buf = mallocz(r->ifcall.count + 1, 1);
 		memcpy(buf, r->ifcall.data, r->ifcall.count);
-		mkobjectftree(newobject(&rich), fsctl->tree->root, buf);
+		mkobjectftree(newobject(&rich, buf), fsctl->tree->root);
 		redraw(1);
 		r->ofcall.count = r->ifcall.count;
 		respond(r, nil);

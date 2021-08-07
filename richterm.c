@@ -17,6 +17,7 @@ Devfsctl *dctl;
 Fsctl *fsctl;
 Fonts fonts;
 Image *Iscrollbar, *Ilink;
+Object *olast;
 
 void resize(void);
 void shutdown(void);
@@ -36,7 +37,6 @@ usage(void)
 void
 threadmain(int argc, char **argv)
 {
-	Object *olast;
 	Mousectl *mctl;
 	Keyboardctl *kctl;
 	int rv[2], mmode;
@@ -57,27 +57,23 @@ threadmain(int argc, char **argv)
 
 	rich.obj = nil;
 	rich.count = 0;
-	dv.n = 0;
 	dv.p = nil;
+	dv.n = 0;
 
 	rich.page.scroll = ZP;
 	rich.page.view = nil;
 
 	qunlock(rich.l);
 
-
-
 	if (initdraw(0, 0, "richterm") < 0)
 		sysfatal("%s: %r", argv0);
+
+	olast = newobject(&rich, nil);
 
 	mmode = 0;
 
 	Iscrollbar = allocimage(
-	  display,
-	  Rect(0,0,1,1),
-	  screen->chan,
-	  1,
-	  0x888888FF);
+	  display, Rect(0,0,1,1), screen->chan, 1, 0x888888FF);
 
 	Ilink = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DBlue);
 
@@ -141,25 +137,47 @@ threadmain(int argc, char **argv)
 				  &rich);
 				break;
 			}
+			if (kv == 0x08) { /* backspace */
+				if (olast->dtext->n > 0) olast->dtext->n--;
+				redraw(1);
+				break;
+			}
 			if (rich.obj != nil) {
-				Faux *aux;
-
 				qlock(rich.l);
 
-				olast = rich.obj[rich.count - 1];
-				aux = olast->ftext->aux;
-				aux->data->n+=runelen(kv);
-				aux->data->p = realloc(aux->data->p, aux->data->n + 1);
-				runetochar(aux->data->p + aux->data->n - 1, &kv);
-				aux->data->p[aux->data->n] = 0;
+				olast->dtext->n+=runelen(kv);
+				olast->dtext->p = realloc(
+				  olast->dtext->p, olast->dtext->n + 1);
+
+				runetochar(olast->dtext->p + olast->dtext->n - 1, &kv);
+				olast->dtext->p[olast->dtext->n] = '\0';
 
 				qunlock(rich.l);
+
+				redraw(1);
 			}
-			redraw(1);
-			dv.p = mallocz(UTFmax, 1);
-			runetochar(dv.p, &kv);
-			dv.n = runelen(kv);
-			nbsend(dctl->rc, &dv);
+			if (kv == '\n') {
+				Object *obj;
+				obj = mkobjectftree(newobject(&rich, nil),
+				  fsctl->tree->root);
+				qlock(rich.l);
+
+				obj->dtext->n = olast->dtext->n;
+				obj->dtext->p = realloc(obj->dtext->p, obj->dtext->n);
+				memcpy(obj->dtext->p, olast->dtext->p, olast->dtext->n);
+
+				qunlock(rich.l);
+
+				dv.p = mallocz(olast->dtext->n, 1);
+				memcpy(dv.p, olast->dtext->p, olast->dtext->n);
+				dv.n = olast->dtext->n;
+				nbsend(dctl->rc, &dv);
+
+				olast->dtext->n = 0;
+
+				redraw(1);
+				break;
+			}
 			break;
 		case NONE:
 			break;
@@ -211,17 +229,17 @@ mouse(Mouse mv, int mmode)
 		if (mv.buttons == 1) {
 			View *view;
 			Object *obj;
-			Faux *linkaux;
+			Data *dlink;
 			view = getview(mv.xy);
 			obj = nil;
-			linkaux = nil;
+			dlink = nil;
 			if (view != nil) obj = view->obj;
-			if (obj != nil) linkaux = obj->flink->aux;
-			if ((linkaux != nil) && (linkaux->data->n > 0)) {
+			if (obj != nil) dlink = obj->dlink;
+			if ((dlink != nil) && (dlink->n > 0)) {
 				Data dv;
-				dv.n = linkaux->data->n;
-				dv.p = malloc(linkaux->data->n);
-				memcpy(dv.p, linkaux->data->p, dv.n);
+				dv.n = dlink->n;
+				dv.p = malloc(dlink->n);
+				memcpy(dv.p, dlink->p, dv.n);
 				nbsend(dctl->rc, &dv);
 			}
 		}
@@ -274,7 +292,6 @@ generatepage(Rich *rich)
 	Page *page;
 	View *v;
 	char *brkp;
-	Faux *aux;
 
 	qlock(rich->l);
 
@@ -293,8 +310,7 @@ generatepage(Rich *rich)
 	}
 
 	obj = *rich->obj;
-	aux = obj->ftext->aux;
-	sp = aux->data->p;
+	sp = obj->dtext->p;
 	i = 0;
 	while (i < rich->count) {
 		newline = 0;
@@ -305,13 +321,24 @@ generatepage(Rich *rich)
 
 		v->obj = obj;
 		v->color = display->black;
-		if (((Faux *)obj->flink->aux)->data->n > 0) v->color = Ilink;
+		if (obj->dlink->n > 0) v->color = Ilink;
 		v->page = &rich->page;
 
 		v->dp = sp;
-		v->length = aux->data->n;
 
-		if ((brkp = strpbrk(v->dp, "\n\t")) != 0) {
+		/* TODO: next line is probably incorrect */
+		v->length = obj->dtext->n;	
+
+		/* this how it should look in theory, but it doesn't work:
+		 * v->length = obj->dtext->p + obj->dtext->n - sp + 1;
+		 */
+
+		/* TODO: v->dp is not guaranteed to be null-terminated
+		 * so, rework following section without strpbrk
+		 */
+		if (
+		  ((brkp = strpbrk(v->dp, "\n\t")) != 0) &&
+		  (brkp <= v->dp + v->length)) {
 			v->length = brkp - v->dp;
 			sp = v->dp + v->length + 1;
 			switch (*brkp) {
@@ -329,8 +356,10 @@ generatepage(Rich *rich)
 			sp = v->dp + v->length;
 		}
 
-		v->r = Rpt(pt, Pt(pt.x + stringnwidth(v->obj->font, v->dp, v->length),
-			pt.y + v->obj->font->height));
+		v->r = Rpt(
+		  pt,
+		  Pt(pt.x + stringnwidth(v->obj->font, v->dp, v->length),
+		    pt.y + v->obj->font->height));
 
 		ymax = (ymax > v->r.max.y) ? ymax : v->r.max.y;
 		pt.x = v->r.max.x;
@@ -352,12 +381,11 @@ generatepage(Rich *rich)
 			pt.y = ymax;
 		}
 
-		if (v->length >= aux->data->n - 1) {
+		if (v->length >= obj->dtext->n - 1) {
 			i++;
 			obj = rich->obj[i];
 			if (i < rich->count) {
-				aux = obj->ftext->aux;
-				sp = aux->data->p;
+				sp = obj->dtext->p;
 			}
 		}
 	}
@@ -414,35 +442,58 @@ scroll(Point p, Rich *r)
 }
 
 Faux *
-fauxalloc(Object *obj, char *str, int type)
+fauxalloc(Object *obj, Data *data, int type)
 {
 	Faux *aux;
 	aux = mallocz(sizeof(Faux), 1);
 	aux->obj = obj;
 	aux->type = type;
-	aux->data = mallocz(sizeof(Data), 1);
-	aux->data->p = str;
-	aux->data->n = strlen(str);
+	aux->data = data;
 	return aux;
 }
 
 Object *
-newobject(Rich *rich)
+newobject(Rich *rich, char *text)
 {
 	Object *obj;
 	qlock(rich->l);
 	rich->count++;
-	rich->idcount++;
 	rich->obj = realloc(rich->obj, rich->count * sizeof(Object *));
 	obj = mallocz(sizeof(Object), 1);
-	rich->obj[rich->count - 1] = obj;
+
+	obj->dtext = mallocz(sizeof(Data), 1);
+	obj->dfont = mallocz(sizeof(Data), 1);
+	obj->dlink = mallocz(sizeof(Data), 1);
+	obj->dimage = mallocz(sizeof(Data), 1);
+
+	if (text != nil) {
+		obj->dtext->p = text;
+		obj->dtext->n = strlen(text);
+	} else obj->dtext->p = strdup("");
+
+	obj->dfont->p = strdup(font->name);
+	obj->dfont->n = strlen(font->name);
+
+	obj->dlink->p = strdup("");
+	obj->dimage->p = strdup("");
+
 	obj->id = smprint("%lld", rich->idcount);
+
+	obj->font = font;
+
+	if (rich->count > 1) {
+		rich->obj[rich->count - 1] = rich->obj[rich->count - 2];
+		rich->obj[rich->count - 2] = obj;
+	} else rich->obj[rich->count - 1] = obj;
+
+	rich->idcount++;
+
 	qunlock(rich->l);
 	return obj;
 }
 
 Object *
-mkobjectftree(Object *obj, File *root, char *text)
+mkobjectftree(Object *obj, File *root)
 {
 	Faux *auxtext, *auxfont, *auxlink, *auximage;
 
@@ -450,10 +501,10 @@ mkobjectftree(Object *obj, File *root, char *text)
 
 	obj->dir = createfile(root, obj->id, "richterm", DMDIR|0555, nil);
 
-	auxtext  = fauxalloc(obj, text, FT_TEXT);
-	auxfont  = fauxalloc(obj, strdup(font->name), FT_FONT);
-	auxlink  = fauxalloc(obj, strdup(""), FT_LINK);
-	auximage = fauxalloc(obj, strdup(""), FT_IMAGE);
+	auxtext  = fauxalloc(obj, obj->dtext, FT_TEXT);
+	auxfont  = fauxalloc(obj, obj->dfont, FT_FONT);
+	auxlink  = fauxalloc(obj, obj->dlink, FT_LINK);
+	auximage = fauxalloc(obj, obj->dimage, FT_IMAGE);
 
 	obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666, auxtext);
 	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666, auxfont);

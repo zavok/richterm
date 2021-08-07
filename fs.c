@@ -27,7 +27,7 @@ ctlcmd(char *buf)
 					free(rich.obj[j]);
 					sp = rich.obj[j];
 					tp = rich.obj[j+1];
-					memcpy(sp, tp, (rich.count - j - 1) * sizeof(Object));
+					memcpy(sp, tp, (rich.count - j - 1) * sizeof(Object *));
 					rich.count--;
 					break;
 				}
@@ -60,7 +60,7 @@ fs_open(Req *r)
 {	
 	Fsctl *fsctl;
 	fsctl = new->aux;
-	newobj = mkobjectftree(newobject(&rich), fsctl->tree->root, strdup(""));
+	newobj = mkobjectftree(newobject(&rich, nil), fsctl->tree->root);
 	respond(r, nil);
 }
 
