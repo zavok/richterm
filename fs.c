@@ -21,11 +21,12 @@ ctlcmd(char *buf)
 		int i, j;
 		for (i = 0; i < n; i++) {
 			for (j = 0; j < rich.count; j++) {
-				if (strcmp(rich.obj[j].id, args[i]) == 0) {
+				if (strcmp(rich.obj[j]->id, args[i]) == 0) {
 					Object *sp, *tp;
-					rmobjectftree(&rich.obj[j]);
-					sp = &rich.obj[j];
-					tp = &rich.obj[j+1];
+					rmobjectftree(rich.obj[j]);
+					free(rich.obj[j]);
+					sp = rich.obj[j];
+					tp = rich.obj[j+1];
 					memcpy(sp, tp, (rich.count - j - 1) * sizeof(Object));
 					rich.count--;
 					break;
@@ -33,8 +34,10 @@ ctlcmd(char *buf)
 			}
 		}
 	} else if (strcmp(args[0], "clear") == 0) {
-		for (rich.count--; rich.count >= 0; rich.count--)
-			rmobjectftree(rich.obj + rich.count);
+		for (rich.count--; rich.count == 0; rich.count--) {
+			rmobjectftree(rich.obj[rich.count]);
+			free(rich.obj[rich.count]);
+		}
 		rich.count = 0;
 		rich.obj = realloc(rich.obj, 0);
 	} else return "unknown command";
@@ -105,15 +108,20 @@ fs_write(Req *r)
 		/* TODO: this is not exactly finished */
 		n = r->ifcall.offset + r->ifcall.count;
 		m = (r->ifcall.offset > aux->data->n) ? aux->data->n : r->ifcall.offset;
-		buf = mallocz(n, 1);
+		buf = mallocz(n + 1, 1);
 		memcpy(buf, aux->data->p, m);
 		memcpy(buf + r->ifcall.offset, r->ifcall.data, r->ifcall.count);
 		free(aux->data->p);
 		aux->data->p = buf;
 		aux->data->n = n;
 		r->ofcall.count = r->ifcall.count;
-		respond(r, nil);
+
+		if (aux->type == FT_FONT) {
+			aux->obj->font = getfont(&fonts, aux->data->p);
+		}
+
 		qunlock(rich.l);
+		respond(r, nil);
 		redraw(1);
 	} else respond(r, "fs_write: f->aux is nil");
 }

@@ -17,6 +17,7 @@ struct Object {
 	File *flink;
 	File *fimage;
 	char *id;
+	Font *font;
 };
 
 Object * mkobjectftree(Object *, File *, char *);
@@ -30,6 +31,8 @@ struct Fonts {
 	int count;
 };
 
+extern Fonts fonts;
+
 Font* getfont(Fonts *, char *);
 void addfont(Fonts *, Font *);
 
@@ -38,13 +41,12 @@ typedef struct View View;
 typedef struct Page Page;
 
 struct View {
+	Page *page;
 	Object *obj;
 	char *dp;
 	long length;
-	Font *font;
 	Image *color;
 	Rectangle r;
-	Page *page;
 };
 
 struct Page {
@@ -64,10 +66,12 @@ typedef struct Rich Rich;
 
 struct Rich {
 	QLock *l;
-	Object *obj;
-	long count;
-	long idcount;
+	Object **obj;
+	usize count;
+	usize idcount;
 	Page page;
+	usize selstart;
+	usize selend;
 };
 
 extern Rich rich;
@@ -98,7 +102,16 @@ Fsctl * initfs(void);
 typedef struct Faux Faux;
 
 struct Faux {
+	int type;
+	Object *obj;
 	Data *data;
 };
 
-Faux * fauxalloc(char *);
+enum {
+	FT_TEXT,
+	FT_FONT,
+	FT_LINK,
+	FT_IMAGE
+};
+
+Faux * fauxalloc(Object *, char *, int);

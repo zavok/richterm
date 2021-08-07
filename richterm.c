@@ -72,7 +72,13 @@ threadmain(int argc, char **argv)
 
 	mmode = 0;
 
-	Iscrollbar = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x888888FF);
+	Iscrollbar = allocimage(
+	  display,
+	  Rect(0,0,1,1),
+	  screen->chan,
+	  1,
+	  0x888888FF);
+
 	Ilink = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DBlue);
 
 	resize();
@@ -110,21 +116,29 @@ threadmain(int argc, char **argv)
 			redraw(1);
 			break;
 		case KBD:
-			if (kv == 0x7f) shutdown();
+			if (kv == 0x7f) shutdown(); /* delete */
 			if (kv == 0xf00e) { /* d-pad up */
-				scroll(Pt(0, rich.page.scroll.y - Dy(screen->r) / 8), &rich);
+				scroll(
+				  Pt(0, rich.page.scroll.y - Dy(screen->r) / 8),
+				  &rich);
 				break;
 			}
 			if (kv == 0xf800) { /* d-pad down */
-				scroll(Pt(0, rich.page.scroll.y + Dy(screen->r) / 8), &rich);
+				scroll(
+				  Pt(0, rich.page.scroll.y + Dy(screen->r) / 8),
+				  &rich);
 				break;
 			}
 			if (kv == 0xf00f) { /* page up */
-				scroll(Pt(0, rich.page.scroll.y - Dy(screen->r) / 4), &rich);
+				scroll(
+				  Pt(0, rich.page.scroll.y - Dy(screen->r) / 4),
+				  &rich);
 				break;
 			}
 			if (kv == 0xf013) { /* page down */
-				scroll(Pt(0, rich.page.scroll.y + Dy(screen->r) / 4), &rich);
+				scroll(
+				  Pt(0, rich.page.scroll.y + Dy(screen->r) / 4),
+				  &rich);
 				break;
 			}
 			if (rich.obj != nil) {
@@ -132,7 +146,7 @@ threadmain(int argc, char **argv)
 
 				qlock(rich.l);
 
-				olast = rich.obj + rich.count - 1;
+				olast = rich.obj[rich.count - 1];
 				aux = olast->ftext->aux;
 				aux->data->n+=runelen(kv);
 				aux->data->p = realloc(aux->data->p, aux->data->n + 1);
@@ -158,25 +172,40 @@ mouse(Mouse mv, int mmode)
 {
 	if (mv.buttons == 0) mmode = 0;
 	if (mv.buttons == 8) {
-		scroll(subpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+		scroll(
+		  subpt(rich.page.scroll,
+		  Pt(0, mv.xy.y - rich.page.r.min.y)),
+		  &rich);
 		return mmode;
 	}
 	if (mv.buttons == 16) {
-		scroll(addpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+		scroll(
+		  addpt(rich.page.scroll,
+		  Pt(0, mv.xy.y - rich.page.r.min.y)),
+		  &rich);
 		return mmode;
 	}
 	if (ptinrect(mv.xy, rich.page.rs) != 0) { /* scrollbar */
 		if (mv.buttons == 1) {
-			scroll(subpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+			scroll(
+			  subpt(rich.page.scroll,
+			  Pt(0, mv.xy.y - rich.page.r.min.y)),
+			  &rich);
 		} else if (mv.buttons == 4) {
-			scroll(addpt(rich.page.scroll, Pt(0, mv.xy.y - rich.page.r.min.y)), &rich);
+			scroll(
+			  addpt(rich.page.scroll,
+			  Pt(0, mv.xy.y - rich.page.r.min.y)),
+			  &rich);
 		} else if (mv.buttons == 2) {
 			mmode = 1;
 		}
 	}
 	if (mmode == 1) {
 		int y;
-		y = (mv.xy.y - rich.page.r.min.y) * ((double)rich.page.max.y / Dy(rich.page.r));
+
+		y = (mv.xy.y - rich.page.r.min.y) *
+		  ((double)rich.page.max.y / Dy(rich.page.r));
+
 		scroll(Pt(rich.page.scroll.x, y), &rich);
 	} else { /* text area */
 		if (mv.buttons == 1) {
@@ -229,7 +258,7 @@ drawview(Image *dst, View *v)
 	Rectangle r;
 	r = rectsubpt(v->r, v->page->scroll);
 	draw(dst, r, display->white, nil, ZP);
-	stringn(dst, r.min, v->color, ZP, v->font, v->dp, v->length);
+	stringn(dst, r.min, v->color, ZP, v->obj->font, v->dp, v->length);
 }
 
 void
@@ -238,9 +267,9 @@ generatepage(Rich *rich)
 	#define BSIZE 4096
 
 	Rectangle r;
-	char *sp, *buf;
+	char *sp;
 	Object *obj;
-	int newline, tab, ymax;
+	int newline, tab, ymax, i;
 	Point pt;
 	Page *page;
 	View *v;
@@ -263,26 +292,21 @@ generatepage(Rich *rich)
 		return;
 	}
 
-	obj = rich->obj;
+	obj = *rich->obj;
 	aux = obj->ftext->aux;
 	sp = aux->data->p;
-	while (obj < rich->obj + rich->count) {
+	i = 0;
+	while (i < rich->count) {
 		newline = 0;
 		tab = 0;
 		page->count++;
 		page->view = realloc(page->view, sizeof(View) * (page->count));
-		v = page->view + page->count - 1;
+		v = &page->view[page->count - 1];
 
 		v->obj = obj;
 		v->color = display->black;
 		if (((Faux *)obj->flink->aux)->data->n > 0) v->color = Ilink;
 		v->page = &rich->page;
-
-		buf = mallocz(((Faux *)obj->ffont->aux)->data->n + 1, 1);
-		memcpy(buf, ((Faux *)obj->ffont->aux)->data->p, ((Faux *)obj->ffont->aux)->data->n);
-		buf[((Faux *)obj->ffont->aux)->data->n] = '\0';
-		v->font = getfont(&fonts, buf);
-		free(buf);
 
 		v->dp = sp;
 		v->length = aux->data->n;
@@ -299,14 +323,14 @@ generatepage(Rich *rich)
 				break;
 			}
 		}
-		while (stringnwidth(v->font, v->dp, v->length) > (r.max.x - pt.x)) {
+		while (stringnwidth(v->obj->font, v->dp, v->length) > (r.max.x - pt.x)) {
 			newline = 1;
 			v->length--;
 			sp = v->dp + v->length;
 		}
 
-		v->r = Rpt(pt, Pt(pt.x + stringnwidth(v->font, v->dp, v->length),
-			pt.y + v->font->height));
+		v->r = Rpt(pt, Pt(pt.x + stringnwidth(v->obj->font, v->dp, v->length),
+			pt.y + v->obj->font->height));
 
 		ymax = (ymax > v->r.max.y) ? ymax : v->r.max.y;
 		pt.x = v->r.max.x;
@@ -329,8 +353,9 @@ generatepage(Rich *rich)
 		}
 
 		if (v->length >= aux->data->n - 1) {
-			obj++;
-			if (obj < rich->obj + rich->count) {
+			i++;
+			obj = rich->obj[i];
+			if (i < rich->count) {
 				aux = obj->ftext->aux;
 				sp = aux->data->p;
 			}
@@ -344,7 +369,7 @@ generatepage(Rich *rich)
 }
 
 Font *
-getfont(struct Fonts *fonts, char *name)
+getfont(Fonts *fonts, char *name)
 {
 	int i;
 	Font *newfont;
@@ -361,7 +386,7 @@ getfont(struct Fonts *fonts, char *name)
 }
 
 void
-addfont(struct Fonts *fonts, Font *font)
+addfont(Fonts *fonts, Font *font)
 {
 	if (fonts->data == nil) {
 		fonts->data = mallocz(16 * sizeof(Font*), 1);
@@ -389,10 +414,12 @@ scroll(Point p, Rich *r)
 }
 
 Faux *
-fauxalloc(char *str)
+fauxalloc(Object *obj, char *str, int type)
 {
 	Faux *aux;
 	aux = mallocz(sizeof(Faux), 1);
+	aux->obj = obj;
+	aux->type = type;
 	aux->data = mallocz(sizeof(Data), 1);
 	aux->data->p = str;
 	aux->data->n = strlen(str);
@@ -406,9 +433,10 @@ newobject(Rich *rich)
 	qlock(rich->l);
 	rich->count++;
 	rich->idcount++;
-	rich->obj = realloc(rich->obj, rich->count * sizeof(Object));
-	obj = &(rich->obj[rich->count - 1]);
-	obj->id = smprint("%ld", rich->idcount);
+	rich->obj = realloc(rich->obj, rich->count * sizeof(Object *));
+	obj = mallocz(sizeof(Object), 1);
+	rich->obj[rich->count - 1] = obj;
+	obj->id = smprint("%lld", rich->idcount);
 	qunlock(rich->l);
 	return obj;
 }
@@ -422,15 +450,17 @@ mkobjectftree(Object *obj, File *root, char *text)
 
 	obj->dir = createfile(root, obj->id, "richterm", DMDIR|0555, nil);
 
-	auxtext  = fauxalloc(text);
-	auxfont  = fauxalloc(strdup(font->name));
-	auxlink  = fauxalloc(strdup(""));
-	auximage = fauxalloc(strdup(""));
+	auxtext  = fauxalloc(obj, text, FT_TEXT);
+	auxfont  = fauxalloc(obj, strdup(font->name), FT_FONT);
+	auxlink  = fauxalloc(obj, strdup(""), FT_LINK);
+	auximage = fauxalloc(obj, strdup(""), FT_IMAGE);
 
 	obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666, auxtext);
 	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666, auxfont);
 	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666, auxlink);
 	obj->fimage = createfile(obj->dir, "image", "richterm", 0666, auximage);
+
+	obj->font = font;
 	qunlock(rich.l);
 	return obj;
 }
