@@ -24,6 +24,8 @@ struct Object {
 	Font *font;
 };
 
+extern Object *olast;
+
 Object * mkobjectftree(Object *, File *);
 void rmobjectftree(Object *);
 
