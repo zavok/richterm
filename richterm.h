@@ -52,7 +52,9 @@ struct View {
 	char *dp;
 	long length;
 	Image *color;
+	Image *image;
 	Rectangle r;
+	int selected;
 };
 
 struct Page {
@@ -62,6 +64,8 @@ struct Page {
 	Point max;
 	Rectangle r;
 	Rectangle rs;
+	usize selstart;
+	usize selend;
 };
 
 void drawview(Image *, View *);
@@ -76,8 +80,6 @@ struct Rich {
 	usize count;
 	usize idcount;
 	Page page;
-	usize selstart;
-	usize selend;
 };
 
 extern Rich rich;

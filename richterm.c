@@ -16,15 +16,23 @@ Channel *pidchan;
 Devfsctl *dctl;
 Fsctl *fsctl;
 Fonts fonts;
-Image *Iscrollbar, *Ilink;
+Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg;
 Object *olast;
+
+enum {
+	MM_NONE,
+	MM_SCROLLBAR,
+	MM_TEXT,
+	MM_SELECT,
+};
 
 void resize(void);
 void shutdown(void);
 void send_interrupt(void);
 void runcmd(void *);
 void scroll(Point, Rich *);
-int mouse(Mouse, int);
+void mouse(Mouse, int *);
+usize getsel(Point p);
 View * getview(Point p);
 
 void
@@ -63,6 +71,9 @@ threadmain(int argc, char **argv)
 	rich.page.scroll = ZP;
 	rich.page.view = nil;
 
+	rich.page.selstart = 0;
+	rich.page.selend = 0;
+
 	qunlock(rich.l);
 
 	if (initdraw(0, 0, "richterm") < 0)
@@ -70,12 +81,19 @@ threadmain(int argc, char **argv)
 
 	olast = newobject(&rich, nil);
 
-	mmode = 0;
+	mmode = MM_NONE;
 
 	Iscrollbar = allocimage(
-	  display, Rect(0,0,1,1), screen->chan, 1, 0x888888FF);
+	  display, Rect(0,0,1,1), screen->chan, 1, 0x999999FF);
 
-	Ilink = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DBlue);
+	Inormbg = allocimage(
+	  display, Rect(0,0,1,1), screen->chan, 1, 0xDDDDDDFF);
+
+	Iselbg = allocimage(
+	  display, Rect(0,0,1,1), screen->chan, 1, 0xBBBBBBFF);
+
+	Ilink = allocimage(
+	  display, Rect(0,0,1,1), screen->chan, 1, DBlue);
 
 	resize();
 	redraw(1);
@@ -103,7 +121,7 @@ threadmain(int argc, char **argv)
 	for (;;) {
 		switch(alt(alts)) {
 		case MOUSE:
-			mmode = mouse(mv, mmode);
+			mouse(mv, &mmode);
 			break;
 		case RESIZE:
 			if (getwindow(display, Refnone) < 0)
@@ -143,13 +161,16 @@ threadmain(int argc, char **argv)
 				break;
 			}
 			if (rich.obj != nil) {
+				int n;
+				n = runelen(kv);
+
 				qlock(rich.l);
 
-				olast->dtext->n+=runelen(kv);
+				olast->dtext->n+=n;
 				olast->dtext->p = realloc(
 				  olast->dtext->p, olast->dtext->n + 1);
 
-				runetochar(olast->dtext->p + olast->dtext->n - 1, &kv);
+				runetochar(olast->dtext->p + olast->dtext->n - n, &kv);
 				olast->dtext->p[olast->dtext->n] = '\0';
 
 				qunlock(rich.l);
@@ -185,55 +206,71 @@ threadmain(int argc, char **argv)
 	}
 }
 
-int
-mouse(Mouse mv, int mmode)
+void
+mouse(Mouse mv, int *mmode)
 {
-	if (mv.buttons == 0) mmode = 0;
+	View *v;
+
+	if (mv.buttons == 0) {
+		*mmode = MM_NONE;
+		return;
+	}
 	if (mv.buttons == 8) {
 		scroll(
 		  subpt(rich.page.scroll,
 		  Pt(0, mv.xy.y - rich.page.r.min.y)),
 		  &rich);
-		return mmode;
+		return;
 	}
 	if (mv.buttons == 16) {
 		scroll(
 		  addpt(rich.page.scroll,
 		  Pt(0, mv.xy.y - rich.page.r.min.y)),
 		  &rich);
-		return mmode;
+		return;
 	}
-	if (ptinrect(mv.xy, rich.page.rs) != 0) { /* scrollbar */
+
+	if (*mmode == MM_NONE) {
+		if (ptinrect(mv.xy, rich.page.rs) != 0)
+			*mmode = MM_SCROLLBAR;
+		if (ptinrect(mv.xy, rich.page.r) != 0)
+			*mmode = MM_TEXT;
+	}
+
+	switch (*mmode) {
+	case MM_SCROLLBAR:
 		if (mv.buttons == 1) {
 			scroll(
 			  subpt(rich.page.scroll,
 			  Pt(0, mv.xy.y - rich.page.r.min.y)),
 			  &rich);
+		} else if (mv.buttons == 2) {
+			scroll(
+			  Pt(rich.page.scroll.x,
+			    (mv.xy.y - rich.page.r.min.y) *
+		  	    ((double)rich.page.max.y / Dy(rich.page.r))),
+		 	  &rich);
 		} else if (mv.buttons == 4) {
 			scroll(
 			  addpt(rich.page.scroll,
 			  Pt(0, mv.xy.y - rich.page.r.min.y)),
 			  &rich);
-		} else if (mv.buttons == 2) {
-			mmode = 1;
 		}
-	}
-	if (mmode == 1) {
-		int y;
-
-		y = (mv.xy.y - rich.page.r.min.y) *
-		  ((double)rich.page.max.y / Dy(rich.page.r));
-
-		scroll(Pt(rich.page.scroll.x, y), &rich);
-	} else { /* text area */
+		break;
+	case MM_TEXT:
 		if (mv.buttons == 1) {
-			View *view;
+			rich.page.selstart = getsel(mv.xy);
+			rich.page.selend = rich.page.selstart;
+			redraw(1);
+			*mmode = MM_SELECT;
+		}
+		if (mv.buttons == 4) {
 			Object *obj;
 			Data *dlink;
-			view = getview(mv.xy);
+			v = getview(mv.xy);
 			obj = nil;
 			dlink = nil;
-			if (view != nil) obj = view->obj;
+			if (v != nil) obj = v->obj;
 			if (obj != nil) dlink = obj->dlink;
 			if ((dlink != nil) && (dlink->n > 0)) {
 				Data dv;
@@ -242,19 +279,53 @@ mouse(Mouse mv, int mmode)
 				memcpy(dv.p, dlink->p, dv.n);
 				nbsend(dctl->rc, &dv);
 			}
+			break;
 		}
+	case MM_SELECT:
+		if (mv.buttons == (1|2)) {
+			/* cut */
+			break;
+		}
+		if (mv.buttons == (1|4)) {
+			/* paste */
+			break;
+		}
+		rich.page.selend = getsel(mv.xy);
+		redraw(1);
 	}
+}
 
-	return mmode;
+usize
+getsel(Point p)
+{
+	View *v;
+	long i;
+	usize cc;
+	cc = 0;
+	v = getview(p);
+	if (v == nil) return 0;
+	for (i = 0; i < rich.page.count ; i++) {
+		if (v == &rich.page.view[i]) break;
+		cc += rich.page.view[i].length;
+	}
+	for (i = 0; i < v->length; i++) {
+		if (stringnwidth(v->obj->font, v->dp, i) >=
+		  p.x - v->r.min.x)
+			break;
+	}
+	return cc + i - 1;
 }
 
 View *
 getview(Point p)
 {
 	int i;
+	if (p.x < rich.page.r.min.x) p.x = rich.page.r.min.x;
+	if (p.x > rich.page.r.max.x) p.x = rich.page.r.max.x;
+
 	for (i = 0; i < rich.page.count; i++) {
 	 if (ptinrect(p, rich.page.view[i].r) != 0)
-		return &(rich.page.view[i]);
+		return &rich.page.view[i];
 	}
 	return nil;
 }
@@ -273,48 +344,75 @@ drawpage(Image *dst, Page *p)
 void
 drawview(Image *dst, View *v)
 {
+	Image *bg;
 	Rectangle r;
 	r = rectsubpt(v->r, v->page->scroll);
-	draw(dst, r, display->white, nil, ZP);
-	stringn(dst, r.min, v->color, ZP, v->obj->font, v->dp, v->length);
+	if (v->image != nil) {
+		draw(dst, r, v->image, nil, ZP);
+	} else {
+		bg = (v->selected != 0) ? Iselbg : Inormbg;
+		draw(dst, r, bg, nil, ZP);
+		stringn(dst, r.min, v->color, ZP,
+		  v->obj->font, v->dp, v->length);
+	}
 }
 
 void
 generatepage(Rich *rich)
 {
-	#define BSIZE 4096
-
 	Rectangle r;
 	char *sp;
+	usize cc;
 	Object *obj;
-	int newline, tab, ymax, i;
+	int sel, ymax, i;
+	usize selmin, selmax;
 	Point pt;
 	Page *page;
-	View *v;
-	char *brkp;
+
+	enum {
+		SEL_BEFORE,
+		SEL_IN,
+		SEL_AFTER
+	};
+
+	
+	sel = SEL_BEFORE;
+	cc = 0;
 
 	qlock(rich->l);
-
-	page = &rich->page;
-
-	r = page->r;
-
-	page->count = 0;
-	page->scroll = rich->page.scroll;
-	pt = r.min;
-	ymax = 0;
 	
 	if (rich->obj == nil) {
 		qunlock(rich->l);
 		return;
 	}
 
+	page = &rich->page;
+
+	r = page->r;
+
+	if (page->selstart < page->selend) {
+		selmin = page->selstart;
+		selmax = page->selend;
+	} else {
+		selmin = page->selend;
+		selmax = page->selstart;
+	}
+
+	page->count = 0;
+	pt = r.min;
+	ymax = 0;
+
 	obj = *rich->obj;
 	sp = obj->dtext->p;
 	i = 0;
 	while (i < rich->count) {
+		int newline, tab;
+		View *v;
+		char *brkp;
+
 		newline = 0;
 		tab = 0;
+
 		page->count++;
 		page->view = realloc(page->view, sizeof(View) * (page->count));
 		v = &page->view[page->count - 1];
@@ -324,14 +422,30 @@ generatepage(Rich *rich)
 		if (obj->dlink->n > 0) v->color = Ilink;
 		v->page = &rich->page;
 
+		v->image = nil;
+		v->selected = (sel == SEL_IN);
+
 		v->dp = sp;
 
 		/* TODO: next line is probably incorrect */
-		v->length = obj->dtext->n;	
+		v->length = obj->dtext->n;
 
 		/* this how it should look in theory, but it doesn't work:
 		 * v->length = obj->dtext->p + obj->dtext->n - sp + 1;
 		 */
+
+		if ((sel==SEL_BEFORE) &&
+		  (v->length > selmin - cc)) {
+			v->length = selmin - cc;
+			sp = v->dp + v->length;
+			sel = SEL_IN;
+		}
+		if ((sel==SEL_IN) &&
+		  (v->length > selmax - cc)) {
+			v->length = selmax - cc;
+			sp = v->dp + v->length;
+			sel = SEL_AFTER;
+		}
 
 		/* TODO: v->dp is not guaranteed to be null-terminated
 		 * so, rework following section without strpbrk
@@ -374,9 +488,11 @@ generatepage(Rich *rich)
 					break;
 				}
 			}
+			v->r.max.x = nx;
 			pt.x = nx;
 		}
 		if (newline != 0) {
+			v->r.max.x = r.max.x;
 			pt.x = r.min.x;
 			pt.y = ymax;
 		}
@@ -388,6 +504,8 @@ generatepage(Rich *rich)
 				sp = obj->dtext->p;
 			}
 		}
+
+		cc += v->length;
 	}
 
 	rich->page.max.y = ymax - r.min.y;
@@ -530,7 +648,7 @@ void
 redraw(int regen)
 {
 	if (regen != 0) generatepage(&rich);
-	draw(screen, screen->r, display->white, nil, ZP);
+	draw(screen, screen->r, Inormbg, nil, ZP);
 	drawpage(screen, &rich.page);
 	drawscrollbar();
 	flushimage(display, 1);
@@ -551,7 +669,7 @@ drawscrollbar(void)
 	), rich.page.rs.min);
 
 	draw(screen, rich.page.rs, Iscrollbar, nil, ZP);
-	draw(screen, r, display->white, nil, ZP);
+	draw(screen, r, Inormbg, nil, ZP);
 }
 
 void
