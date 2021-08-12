@@ -8,6 +8,7 @@
 #include <cursor.h>
 #include <9p.h>
 
+#include "array.h"
 #include "richterm.h"
 
 Rich rich;
@@ -15,7 +16,7 @@ int hostpid = -1;
 Channel *pidchan;
 Devfsctl *dctl;
 Fsctl *fsctl;
-Fonts fonts;
+Array *fonts;
 Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg;
 Object *olast;
 
@@ -45,6 +46,7 @@ usage(void)
 void
 threadmain(int argc, char **argv)
 {
+	Font **fp;
 	Mousectl *mctl;
 	Keyboardctl *kctl;
 	int rv[2], mmode;
@@ -78,6 +80,10 @@ threadmain(int argc, char **argv)
 
 	if (initdraw(0, 0, "richterm") < 0)
 		sysfatal("%s: %r", argv0);
+
+	fonts = arraycreate(sizeof(Font *), 2, nil);
+	fp = arrayadd(fonts);
+	*fp = font;
 
 	olast = newobject(&rich, nil);
 
@@ -515,35 +521,22 @@ generatepage(Rich *rich)
 }
 
 Font *
-getfont(Fonts *fonts, char *name)
+getfont(Array *fonts, char *name)
 {
 	int i;
-	Font *newfont;
+	Font *newfont, **fp;
 	for (i = 0; i < fonts->count; i++){
-		if (strcmp(fonts->data[i]->name, name) == 0) return fonts->data[i];
+		fp = arrayget(fonts, i);
+		if (strcmp((*fp)->name, name) == 0) return *fp;
 	}
 	if ((newfont = openfont(display, name)) == nil) {
 		fprint(2, "%r\n");
 		newfont = font;
 	} else {
-		addfont(fonts, newfont);
+		fp = arrayadd(fonts);
+		*fp = newfont;
 	}
 	return newfont;
-}
-
-void
-addfont(Fonts *fonts, Font *font)
-{
-	if (fonts->data == nil) {
-		fonts->data = mallocz(16 * sizeof(Font*), 1);
-		fonts->size = 16;
-	}
-	if (fonts->count >= fonts->size) {
-		fonts->size = fonts->size * 2;
-		fonts->data = realloc(fonts->data, fonts->size * sizeof(Font*));
-	}
-	fonts->data[fonts->count] = font;
-	fonts->count++;
 }
 
 void

@@ -29,18 +29,9 @@ extern Object *olast;
 Object * mkobjectftree(Object *, File *);
 void rmobjectftree(Object *);
 
-typedef struct Fonts Fonts;
+extern Array *fonts;
 
-struct Fonts {
-	Font **data;
-	int size;
-	int count;
-};
-
-extern Fonts fonts;
-
-Font* getfont(Fonts *, char *);
-void addfont(Fonts *, Font *);
+Font* getfont(Array *, char *);
 
 typedef struct View View;
 

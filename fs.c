@@ -5,6 +5,7 @@
 #include <draw.h>
 #include <9p.h>
 
+#include "array.h"
 #include "richterm.h"
 
 File *new, *ctl;
@@ -119,7 +120,9 @@ fs_write(Req *r)
 		r->ofcall.count = r->ifcall.count;
 
 		if (aux->type == FT_FONT) {
-			aux->obj->font = getfont(&fonts, aux->data->p);
+			char *path;
+			tokenize(aux->data->p, &path, 1);
+			aux->obj->font = getfont(fonts, path);
 		}
 
 		qunlock(rich.l);

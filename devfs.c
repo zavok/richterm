@@ -5,6 +5,7 @@
 #include <draw.h>
 #include <9p.h>
 
+#include "array.h"
 #include "richterm.h"
 
 File *cons, *consctl;
