@@ -53,6 +53,7 @@ threadmain(int argc, char **argv)
 	Mouse mv;
 	Rune kv;
 	Data dv;
+
 	ARGBEGIN{
 	case 'D':
 		chatty9p++;
@@ -65,13 +66,17 @@ threadmain(int argc, char **argv)
 
 	qlock(rich.l);
 
+	rich.objects = arraycreate(sizeof(Object *), 8, nil);
+	/* TODO add objectfree() func above */
+
+	rich.page.views = arraycreate(sizeof(View), 8, nil);
+
 	rich.obj = nil;
 	rich.count = 0;
 	dv.p = nil;
 	dv.n = 0;
 
 	rich.page.scroll = ZP;
-	rich.page.view = nil;
 
 	rich.page.selstart = 0;
 	rich.page.selend = 0;
@@ -304,15 +309,16 @@ mouse(Mouse mv, int *mmode)
 usize
 getsel(Point p)
 {
-	View *v;
+	View *v, *vp;
 	long i;
 	usize cc;
 	cc = 0;
 	v = getview(p);
 	if (v == nil) return 0;
-	for (i = 0; i < rich.page.count ; i++) {
-		if (v == &rich.page.view[i]) break;
-		cc += rich.page.view[i].length;
+	for (i = 0; i < rich.page.views->count ; i++) {
+		vp = arrayget(rich.page.views, i);
+		if (v == vp) break;
+		cc += vp->length;
 	}
 	for (i = 0; i < v->length; i++) {
 		if (stringnwidth(v->obj->font, v->dp, i) >=
@@ -326,12 +332,15 @@ View *
 getview(Point p)
 {
 	int i;
+	View *vp;
+
 	if (p.x < rich.page.r.min.x) p.x = rich.page.r.min.x;
 	if (p.x > rich.page.r.max.x) p.x = rich.page.r.max.x;
 
-	for (i = 0; i < rich.page.count; i++) {
-	 if (ptinrect(p, rich.page.view[i].r) != 0)
-		return &rich.page.view[i];
+	for (i = 0; i < rich.page.views->count; i++) {
+		vp = arrayget(rich.page.views, i);
+		if (ptinrect(p, vp->r) != 0)
+			return vp;
 	}
 	return nil;
 }
@@ -339,10 +348,12 @@ getview(Point p)
 void
 drawpage(Image *dst, Page *p)
 {
+	View *vp;
 	int i;
 	qlock(rich.l);
-	for (i = 0; i < p->count; i++) {
-		drawview(dst, p->view + i);
+	for (i = 0; i < p->views->count; i++) {
+		vp = arrayget(p->views, i);
+		drawview(dst, vp);
 	}
 	qunlock(rich.l);
 }
@@ -394,6 +405,8 @@ generatepage(Rich *rich)
 
 	page = &rich->page;
 
+	page->views->count = 0;
+
 	r = page->r;
 
 	if (page->selstart < page->selend) {
@@ -404,7 +417,6 @@ generatepage(Rich *rich)
 		selmax = page->selstart;
 	}
 
-	page->count = 0;
 	pt = r.min;
 	ymax = 0;
 
@@ -419,9 +431,7 @@ generatepage(Rich *rich)
 		newline = 0;
 		tab = 0;
 
-		page->count++;
-		page->view = realloc(page->view, sizeof(View) * (page->count));
-		v = &page->view[page->count - 1];
+		v = arrayadd(rich->page.views);
 
 		v->obj = obj;
 		v->color = display->black;
@@ -566,11 +576,14 @@ fauxalloc(Object *obj, Data *data, int type)
 Object *
 newobject(Rich *rich, char *text)
 {
-	Object *obj;
+	Object *obj, **op;
 	qlock(rich->l);
 	rich->count++;
 	rich->obj = realloc(rich->obj, rich->count * sizeof(Object *));
 	obj = mallocz(sizeof(Object), 1);
+
+	op = arrayadd(rich->objects);
+	*op = obj;
 
 	obj->dtext = mallocz(sizeof(Data), 1);
 	obj->dfont = mallocz(sizeof(Data), 1);

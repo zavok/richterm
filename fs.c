@@ -20,7 +20,7 @@ ctlcmd(char *buf)
 	if (n <= 0) return "expected a command";
 	if (strcmp(args[0], "remove") == 0) {
 		for (i = 0; i < n; i++) {
-			for (j = 0; j < rich.count; j++) {
+			for (j = 0; j < rich.objects->count; j++) {
 				if (rich.obj[j] == olast) continue;
 				if (strcmp(rich.obj[j]->id, args[i]) == 0) {
 					Object **sp, **tp;

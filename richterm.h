@@ -49,8 +49,7 @@ struct View {
 };
 
 struct Page {
-	View *view;
-	long count;
+	Array *views;
 	Point scroll;
 	Point max;
 	Rectangle r;
@@ -67,10 +66,15 @@ typedef struct Rich Rich;
 
 struct Rich {
 	QLock *l;
+
 	Object **obj;
 	usize count;
+
 	usize idcount;
 	Page page;
+
+
+	Array *objects;
 };
 
 extern Rich rich;
