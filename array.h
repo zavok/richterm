@@ -1,6 +1,7 @@
 typedef struct Array Array;
 
 struct Array {
+	QLock *l;
 	usize size;
 	usize n;
 	long count;
