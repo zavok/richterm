@@ -11,4 +11,5 @@ struct Array {
 Array * arraycreate(usize, long, void (*free)(void *));
 void arrayfree(Array *);
 void * arrayadd(Array *);
+void arraydel(Array *, long);
 void * arrayget(Array *, long);

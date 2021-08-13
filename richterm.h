@@ -28,6 +28,7 @@ extern Object *olast;
 
 Object * mkobjectftree(Object *, File *);
 void rmobjectftree(Object *);
+void objectfree(void *);
 
 extern Array *fonts;
 
@@ -66,15 +67,10 @@ typedef struct Rich Rich;
 
 struct Rich {
 	QLock *l;
-
-	Object **obj;
-	usize count;
-
-	usize idcount;
+	Array *objects;
+	u64int idcount;
 	Page page;
 
-
-	Array *objects;
 };
 
 extern Rich rich;

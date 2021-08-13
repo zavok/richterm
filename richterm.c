@@ -62,19 +62,35 @@ threadmain(int argc, char **argv)
 		usage();
 	} ARGEND
 
+	dv = (Data) {nil, 0};
+	mmode = MM_NONE;
+
+	if (initdraw(0, 0, "richterm") < 0)
+		sysfatal("%s: %r", argv0);
+	if ((mctl = initmouse(nil, screen)) == nil)
+		sysfatal("%s: %r", argv0);
+	if ((kctl = initkeyboard(nil)) == nil)
+		sysfatal("%s: %r", argv0);
+
+	Iscrollbar = allocimage(
+	  display, Rect(0,0,1,1), screen->chan, 1, 0x999999FF);
+	Inormbg = allocimage(
+	  display, Rect(0,0,1,1), screen->chan, 1, 0xDDDDDDFF);
+	Iselbg = allocimage(
+	  display, Rect(0,0,1,1), screen->chan, 1, 0xBBBBBBFF);
+	Ilink = allocimage(
+	  display, Rect(0,0,1,1), screen->chan, 1, DBlue);
+
+	fonts = arraycreate(sizeof(Font *), 2, nil);
+	fp = arrayadd(fonts);
+	*fp = font;
+
 	rich.l = mallocz(sizeof(QLock), 1);
 
 	qlock(rich.l);
 
 	rich.objects = arraycreate(sizeof(Object *), 8, nil);
-	/* TODO add objectfree() func above */
-
 	rich.page.views = arraycreate(sizeof(View), 8, nil);
-
-	rich.obj = nil;
-	rich.count = 0;
-	dv.p = nil;
-	dv.n = 0;
 
 	rich.page.scroll = ZP;
 
@@ -83,28 +99,7 @@ threadmain(int argc, char **argv)
 
 	qunlock(rich.l);
 
-	if (initdraw(0, 0, "richterm") < 0)
-		sysfatal("%s: %r", argv0);
-
-	fonts = arraycreate(sizeof(Font *), 2, nil);
-	fp = arrayadd(fonts);
-	*fp = font;
-
 	olast = newobject(&rich, nil);
-
-	mmode = MM_NONE;
-
-	Iscrollbar = allocimage(
-	  display, Rect(0,0,1,1), screen->chan, 1, 0x999999FF);
-
-	Inormbg = allocimage(
-	  display, Rect(0,0,1,1), screen->chan, 1, 0xDDDDDDFF);
-
-	Iselbg = allocimage(
-	  display, Rect(0,0,1,1), screen->chan, 1, 0xBBBBBBFF);
-
-	Ilink = allocimage(
-	  display, Rect(0,0,1,1), screen->chan, 1, DBlue);
 
 	resize();
 	redraw(1);
@@ -116,11 +111,6 @@ threadmain(int argc, char **argv)
 	pidchan = chancreate(sizeof(int), 0);
 	proccreate(runcmd, argv, 16 * 1024);
 	hostpid = recvul(pidchan);
-
-	if ((mctl = initmouse(nil, screen)) == nil)
-		sysfatal("%s: %r", argv0);
-	if ((kctl = initkeyboard(nil)) == nil)
-		sysfatal("%s: %r", argv0);
 
 	enum {MOUSE, RESIZE, KBD, DEVFSWRITE, NONE};
 	Alt alts[5] = {
@@ -171,7 +161,7 @@ threadmain(int argc, char **argv)
 				redraw(1);
 				break;
 			}
-			if (rich.obj != nil) {
+			if (rich.objects->count > 0) {
 				int n;
 				n = runelen(kv);
 
@@ -198,14 +188,15 @@ threadmain(int argc, char **argv)
 				obj->dtext->p = realloc(obj->dtext->p, obj->dtext->n);
 				memcpy(obj->dtext->p, olast->dtext->p, olast->dtext->n);
 
+				olast->dtext->n = 0;
+
+				dv.p = mallocz(obj->dtext->n, 1);
+				dv.n = obj->dtext->n;
+				memcpy(dv.p, obj->dtext->p, dv.n);
+
 				qunlock(rich.l);
 
-				dv.p = mallocz(olast->dtext->n, 1);
-				memcpy(dv.p, olast->dtext->p, olast->dtext->n);
-				dv.n = olast->dtext->n;
 				nbsend(dctl->rc, &dv);
-
-				olast->dtext->n = 0;
 
 				redraw(1);
 				break;
@@ -380,7 +371,7 @@ generatepage(Rich *rich)
 	Rectangle r;
 	char *sp;
 	usize cc;
-	Object *obj;
+	Object *obj, **op;
 	int sel, ymax, i;
 	usize selmin, selmax;
 	Point pt;
@@ -392,17 +383,13 @@ generatepage(Rich *rich)
 		SEL_AFTER
 	};
 
-	
 	sel = SEL_BEFORE;
 	cc = 0;
 
+	if (rich->objects->count == 0) return;
+
 	qlock(rich->l);
 	
-	if (rich->obj == nil) {
-		qunlock(rich->l);
-		return;
-	}
-
 	page = &rich->page;
 
 	page->views->count = 0;
@@ -420,10 +407,11 @@ generatepage(Rich *rich)
 	pt = r.min;
 	ymax = 0;
 
-	obj = *rich->obj;
+	op = arrayget(rich->objects, 0);
+	obj = *op;
 	sp = obj->dtext->p;
 	i = 0;
-	while (i < rich->count) {
+	while (i < rich->objects->count) {
 		int newline, tab;
 		View *v;
 		char *brkp;
@@ -515,8 +503,9 @@ generatepage(Rich *rich)
 
 		if (v->length >= obj->dtext->n - 1) {
 			i++;
-			obj = rich->obj[i];
-			if (i < rich->count) {
+			op = arrayget(rich->objects, i);
+			obj = *op;
+			if (i < rich->objects->count) {
 				sp = obj->dtext->p;
 			}
 		}
@@ -524,8 +513,8 @@ generatepage(Rich *rich)
 		cc += v->length;
 	}
 
-	rich->page.max.y = ymax - r.min.y;
-	rich->page.max.x = 0;
+	page->max.y = ymax - r.min.y;
+	page->max.x = r.max.x - r.min.x;
 
 	qunlock(rich->l);
 }
@@ -568,8 +557,8 @@ fauxalloc(Object *obj, Data *data, int type)
 	Faux *aux;
 	aux = mallocz(sizeof(Faux), 1);
 	aux->obj = obj;
-	aux->type = type;
 	aux->data = data;
+	aux->type = type;
 	return aux;
 }
 
@@ -578,11 +567,18 @@ newobject(Rich *rich, char *text)
 {
 	Object *obj, **op;
 	qlock(rich->l);
-	rich->count++;
-	rich->obj = realloc(rich->obj, rich->count * sizeof(Object *));
-	obj = mallocz(sizeof(Object), 1);
 
 	op = arrayadd(rich->objects);
+
+	if (rich->objects->count > 1) {
+		Object **o1;
+		o1 = arrayget(rich->objects, rich->objects->count - 2);
+		*op = *o1;
+		op = o1;
+	}
+
+	obj = mallocz(sizeof(Object), 1);
+
 	*op = obj;
 
 	obj->dtext = mallocz(sizeof(Data), 1);
@@ -604,11 +600,6 @@ newobject(Rich *rich, char *text)
 	obj->id = smprint("%lld", rich->idcount);
 
 	obj->font = font;
-
-	if (rich->count > 1) {
-		rich->obj[rich->count - 1] = rich->obj[rich->count - 2];
-		rich->obj[rich->count - 2] = obj;
-	} else rich->obj[rich->count - 1] = obj;
 
 	rich->idcount++;
 
@@ -635,20 +626,10 @@ mkobjectftree(Object *obj, File *root)
 	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666, auxlink);
 	obj->fimage = createfile(obj->dir, "image", "richterm", 0666, auximage);
 
-	obj->font = font;
 	qunlock(rich.l);
 	return obj;
 }
 
-void
-rmobjectftree(Object *obj)
-{
-	removefile(obj->ftext);
-	removefile(obj->ffont);
-	removefile(obj->flink);
-	removefile(obj->fimage);
-	removefile(obj->dir);
-}
 
 void
 redraw(int regen)
@@ -734,4 +715,27 @@ resize(void)
 	  addpt(screen->r.min, Pt(17, 1)),
 	  subpt(screen->r.max, Pt(1,1))
 	);
+}
+
+void
+objectfree(void *v)
+{
+	Object *op;
+	op = v;
+
+	removefile(op->ftext);
+	removefile(op->ffont);
+	removefile(op->flink);
+	removefile(op->fimage);
+	removefile(op->dir);
+
+	/* TODO: why is this not working? */
+	free(op->id);
+
+//	free(op->dtext->p);
+//	free(op->dfont->p);
+//	free(op->dlink->p);
+//	free(op->dimage->p);
+
+	free(op);
 }

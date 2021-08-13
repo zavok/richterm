@@ -14,36 +14,39 @@ Object *newobj;
 char *
 ctlcmd(char *buf)
 {
+	Object **op;
 	int n, i, j;
 	char *args[256];
 	n = tokenize(buf, args, 256);
 	if (n <= 0) return "expected a command";
+	qlock(rich.l);
 	if (strcmp(args[0], "remove") == 0) {
-		for (i = 0; i < n; i++) {
+		for (i = 1; i < n; i++) {
 			for (j = 0; j < rich.objects->count; j++) {
-				if (rich.obj[j] == olast) continue;
-				if (strcmp(rich.obj[j]->id, args[i]) == 0) {
-					Object **sp, **tp;
-					rmobjectftree(rich.obj[j]);
-					free(rich.obj[j]);
-					sp = &rich.obj[j];
-					tp = &rich.obj[j+1];
-					memcpy(sp, tp, (rich.count - j - 1) * sizeof(Object *));
-					rich.count--;
+				op = arrayget(rich.objects, j);
+				if (*op == olast) continue;
+				if (strcmp((*op)->id, args[i]) == 0) {
+					objectfree(*op);
+					arraydel(rich.objects, j);
 					break;
 				}
 			}
 		}
 	} else if (strcmp(args[0], "clear") == 0) {
-		for (i = 0; i < rich.count; i++) {
-			if (rich.obj[i] == olast) continue;
-			rmobjectftree(rich.obj[i]);
-			free(rich.obj[i]);
+		int k;
+		k = rich.objects->count;
+		for (i = 0; i < k; i++) {
+			op = arrayget(rich.objects, 0);
+			if (*op != olast) {
+				objectfree(*op);
+				arraydel(rich.objects, 0);
+			}
 		}
-		rich.count = 1;
-		rich.obj = realloc(rich.obj, 1 * sizeof(Object *));
-		rich.obj[0] = olast;
-	} else return "unknown command";
+	} else {
+		qunlock(rich.l);
+		return "unknown command";
+	}
+	qunlock(rich.l);
 	return nil;
 }
 

@@ -22,22 +22,33 @@ arrayfree(Array *ap)
 	int i;
 	if (ap->free != nil) {
 		for (i = 0; i < ap->count; i ++) {
-			void *v;
+			void **v;
 			v = arrayget(ap, i);
-			ap->free(v);
+			ap->free(*v);
 		}
 	}
 	free(ap);
-	/* stub */
 }
 
 void * 
 arrayadd(Array *ap)
 {
 	ap->count++;
-	if (ap->count > ap->n) ap->n += ap->n;
-	ap->mem = realloc(ap->mem, ap->size * ap->n);
+	if (ap->count > ap->n) {
+		ap->n += ap->n;
+		ap->mem = realloc(ap->mem, ap->size * ap->n);
+	}
 	return memset(arrayget(ap, ap->count - 1), 0, ap->size);
+}
+
+void
+arraydel(Array *ap, long n)
+{
+	char *v;
+	v = ap->mem + ap->size * n;
+	if (ap->free != nil) ap->free(v);
+	memcpy(v, v + ap->size, (ap->count - n) * ap->size);
+	ap->count--;
 }
 
 void * 
