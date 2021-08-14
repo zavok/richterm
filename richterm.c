@@ -18,6 +18,9 @@ Devfsctl *dctl;
 Fsctl *fsctl;
 Array *fonts;
 Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg;
+
+Image *It1, *It2, *It3;
+
 Object *olast;
 
 enum {
@@ -80,6 +83,16 @@ threadmain(int argc, char **argv)
 	  display, Rect(0,0,1,1), screen->chan, 1, 0xBBBBBBFF);
 	Ilink = allocimage(
 	  display, Rect(0,0,1,1), screen->chan, 1, DBlue);
+
+
+	It1 = allocimage(
+	  display, Rect(0,0,1,1), screen->chan, 1, DRed);
+	It2 = allocimage(
+	  display, Rect(0,0,1,1), screen->chan, 1, DGreen);
+	It3 = allocimage(
+	  display, Rect(0,0,1,1), screen->chan, 1, DYellow);
+
+
 
 	fonts = arraycreate(sizeof(Font *), 2, nil);
 	fp = arrayadd(fonts);
@@ -261,9 +274,11 @@ mouse(Mouse mv, int *mmode)
 		break;
 	case MM_TEXT:
 		if (mv.buttons == 1) {
-			rich.page.selstart = getsel(mv.xy);
-			rich.page.selend = rich.page.selstart;
-			redraw(1);
+			rich.sel.n[0] = getsel(mv.xy);
+			rich.sel.v[0] = getview(mv.xy);
+			rich.sel.n[1] = rich.sel.n[0];
+			rich.sel.v[1] = rich.sel.v[0];
+			redraw(0);
 			*mmode = MM_SELECT;
 		}
 		if (mv.buttons == 4) {
@@ -292,31 +307,29 @@ mouse(Mouse mv, int *mmode)
 			/* paste */
 			break;
 		}
-		rich.page.selend = getsel(mv.xy);
-		redraw(1);
+		rich.sel.n[1] = getsel(mv.xy);
+		rich.sel.v[1] = getview(mv.xy);
+		redraw(0);
 	}
 }
 
 usize
 getsel(Point p)
 {
-	View *v, *vp;
+	View *v;
 	long i;
-	usize cc;
-	cc = 0;
+
 	v = getview(p);
+
+	p = addpt(subpt(p, rich.page.r.min), rich.page.scroll);
+
 	if (v == nil) return 0;
-	for (i = 0; i < rich.page.views->count ; i++) {
-		vp = arrayget(rich.page.views, i);
-		if (v == vp) break;
-		cc += vp->length;
-	}
 	for (i = 0; i < v->length; i++) {
 		if (stringnwidth(v->obj->font, v->dp, i) >=
 		  p.x - v->r.min.x)
 			break;
 	}
-	return cc + i - 1;
+	return i - 1;
 }
 
 View *
@@ -325,11 +338,16 @@ getview(Point p)
 	int i;
 	View *vp;
 
+
 	if (p.x < rich.page.r.min.x) p.x = rich.page.r.min.x;
 	if (p.x > rich.page.r.max.x) p.x = rich.page.r.max.x;
 
+	p = addpt(subpt(p, rich.page.r.min), rich.page.scroll);
+
 	for (i = 0; i < rich.page.views->count; i++) {
+			
 		vp = arrayget(rich.page.views, i);
+
 		if (ptinrect(p, vp->r) != 0)
 			return vp;
 	}
@@ -353,35 +371,102 @@ drawpage(Image *dst, Page *p)
 void
 drawview(Image *dst, View *v)
 {
-	Image *bg;
-	Rectangle r;
+	Image *bg1, *bg2, *bg3;
+	Rectangle r, r1, r2, r3;
+	View *vmin, *vmax;
+	long nmin, nmax;
+
+	if (rich.sel.v[0] < rich.sel.v[1]) {
+		vmin = rich.sel.v[0];
+		vmax = rich.sel.v[1];
+		nmin = rich.sel.n[0];
+		nmax = rich.sel.n[1];
+	} else {
+		vmin = rich.sel.v[1];
+		vmax = rich.sel.v[0];
+		nmin = rich.sel.n[1];
+		nmax = rich.sel.n[0];
+	}
+
+	if (vmin == vmax) {
+		if (rich.sel.n[0] < rich.sel.n[1]) {
+			nmin = rich.sel.n[0];
+			nmax = rich.sel.n[1];
+		} else {
+			nmin = rich.sel.n[1];
+			nmax = rich.sel.n[0];
+		}
+	}
 
 	r = rectaddpt(rectsubpt(v->r, rich.page.scroll),
 	  rich.page.r.min);
 
+	r1 = r;
+	r1.max.x = r.min.x;
+	r2 = r;
+	r3 = r;
+	r3.min.x = r.max.x;
+
+	bg1 = Inormbg;
+	bg2 = Inormbg;
+	bg3 = Inormbg;
+
+	if ((v > vmin) && (v < vmax)) {
+		bg1 = Iselbg;
+		bg2 = Iselbg;
+		bg3 = Iselbg;
+	}
+
+
+	if (v == vmin) {
+		r1.max.x = r.min.x + stringnwidth(v->obj->font, v->dp, nmin);
+		r2.min.x = r1.max.x;
+		bg1 = Inormbg;//Iselbg;
+		bg2 = Iselbg;//Iselbg;
+		bg3 = Iselbg;//Iselbg;
+	}
+	if (v == vmax) {
+		r2.max.x = r.min.x + stringnwidth(v->obj->font, v->dp, nmax);
+		r3.min.x = r2.max.x;
+		bg1 = Iselbg;//Iselbg;
+		bg2 = Iselbg;//Iselbg;
+		bg3 = Inormbg;//Iselbg;
+	}
+	if (vmin == vmax) {
+		bg1 = Inormbg;
+		bg3 = Inormbg;//Iselbg;
+	}
+
+	draw(dst, r1, bg1, nil, ZP);
+	draw(dst, r2, bg2, nil, ZP);
+	draw(dst, r3, bg3, nil, ZP);
+
+
+
 	if (v->obj->image != nil) {
 		draw(dst, r, v->obj->image, nil, ZP);
-	} else {
-		bg = (v->selected != 0) ? Iselbg : Inormbg;
-		draw(dst, r, bg, nil, ZP);
-		stringn(dst, r.min, v->color, ZP,
-		  v->obj->font, v->dp, v->length);
+		return;
 	}
+
+	stringn(dst, r.min, v->color, ZP,
+	  v->obj->font, v->dp, v->length);
 }
 
 View *
 viewadd(Array *views, Object *obj,
-  char *dp, long len, int sel, Rectangle rprev)
+  char *dp, long len, Rectangle rprev)
 {
 	View *vp;
 	Rectangle r;
+	Point p;
 
-	r = Rect(
-	  rprev.max.x,
-	  rprev.min.y,
-	  rprev.max.x + stringnwidth(obj->font, dp, len),
-	  r.min.y + (Dy(rprev) > obj->font->height ?
-	    Dy(rprev) : obj->font->height));
+	p = Pt(rprev.max.x, rprev.min.y);
+
+	r = Rpt(p,
+	  addpt(p, Pt(
+	    stringnwidth(obj->font, dp, len),
+	    (Dy(rprev) > obj->font->height) ?
+	    Dy(rprev) : obj->font->height)));
 
 	vp = arrayadd(views);
 
@@ -391,7 +476,6 @@ viewadd(Array *views, Object *obj,
 		len,
 		display->black,
 		r,
-		sel,
 	};
 
 	return vp;
@@ -426,26 +510,25 @@ generateviews(Rich *rich, Object *obj, View *v)
 		  Dx(rich->page.r)) {
 			fl = FL_NEW | FL_NL;
 		}
-
+		
 		/* TODO:
-		 * if border of selection ...
 		 * if object has an image ... */
 
 		if (fl & FL_NEW) {
-			v = viewadd(views, obj, sp, n, 0, rprev);
+			v = viewadd(views, obj, sp, n, rprev);
 			rprev = v->r;
 			sp = p + 1;
 			n = -1;
 		}
 		if (fl & FL_TAB) {
 			int tl;
-			v = viewadd(views, obj, sp, 0, 0, rprev);
+			v = viewadd(views, obj, sp, 0, rprev);
 			tl = stringwidth(font, "0") * 4;
 			v->r.max.x = ((v->r.max.x / tl) + 1) * tl;
 			rprev = v->r;
 		}
 		if (fl & FL_EL) {
-			v = viewadd(views, obj, sp, 0, 0, rprev);
+			v = viewadd(views, obj, sp, 0, rprev);
 			v->r.max.x = rich->page.r.max.x;
 			rprev = v->r;
 		}
@@ -454,7 +537,7 @@ generateviews(Rich *rich, Object *obj, View *v)
 			rprev = Rect(0, rprev.max.y, 0, rprev.max.y);
 		}
 	}
-	v = viewadd(views, obj, sp, n, 0, rprev);
+	v = viewadd(views, obj, sp, n, rprev);
 
 	return v;
 }
@@ -604,6 +687,7 @@ redraw(int regen)
 	}
 	drawpage(screen, &rich.page);
 	drawscrollbar();
+
 	flushimage(display, 1);
 }
 

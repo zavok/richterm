@@ -45,7 +45,6 @@ struct View {
 	long length;
 	Image *color;
 	Rectangle r;
-	int selected;
 };
 
 struct Page {
@@ -69,7 +68,10 @@ struct Rich {
 	Array *objects;
 	u64int idcount;
 	Page page;
-
+	struct {
+		View *v[2];
+		long n[2];
+	} sel;
 };
 
 extern Rich rich;
