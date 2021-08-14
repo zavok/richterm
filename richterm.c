@@ -341,6 +341,7 @@ drawpage(Image *dst, Page *p)
 {
 	View *vp;
 	int i;
+
 	qlock(rich.l);
 	for (i = 0; i < p->views->count; i++) {
 		vp = arrayget(p->views, i);
@@ -354,9 +355,12 @@ drawview(Image *dst, View *v)
 {
 	Image *bg;
 	Rectangle r;
-	r = rectsubpt(v->r, v->page->scroll);
-	if (v->image != nil) {
-		draw(dst, r, v->image, nil, ZP);
+
+	r = rectaddpt(rectsubpt(v->r, rich.page.scroll),
+	  rich.page.r.min);
+
+	if (v->obj->image != nil) {
+		draw(dst, r, v->obj->image, nil, ZP);
 	} else {
 		bg = (v->selected != 0) ? Iselbg : Inormbg;
 		draw(dst, r, bg, nil, ZP);
@@ -365,156 +369,116 @@ drawview(Image *dst, View *v)
 	}
 }
 
-void
-generatepage(Rich *rich)
+View *
+viewadd(Array *views, Object *obj,
+  char *dp, long len, int sel, Rectangle rprev)
 {
+	View *vp;
 	Rectangle r;
-	char *sp;
-	usize cc;
-	Object *obj, **op;
-	int sel, ymax, i;
-	usize selmin, selmax;
-	Point pt;
-	Page *page;
 
-	enum {
-		SEL_BEFORE,
-		SEL_IN,
-		SEL_AFTER
+	r = Rect(
+	  rprev.max.x,
+	  rprev.min.y,
+	  rprev.max.x + stringnwidth(obj->font, dp, len),
+	  r.min.y + (Dy(rprev) > obj->font->height ?
+	    Dy(rprev) : obj->font->height));
+
+	vp = arrayadd(views);
+
+	*vp = (View) {
+		obj,
+		dp,
+		len,
+		display->black,
+		r,
+		sel,
 	};
 
-	sel = SEL_BEFORE;
-	cc = 0;
+	return vp;
+}
 
-	if (rich->objects->count == 0) return;
+View *
+generateviews(Rich *rich, Object *obj, View *v)
+{
+	Array *views;
+	Rectangle rprev;
+	char *sp, *p, *end;
+	long n;
+
+	enum {
+		FL_NEW = 1,
+		FL_TAB = 2,
+		FL_EL  = 4,
+		FL_NL  = 8,
+	};
+
+	views = rich->page.views;
+	rprev = (v != nil) ? v->r : Rect(0, 0, 0, 0);
+	end = obj->dtext->p + obj->dtext->n;
+	sp = obj->dtext->p;
+	
+	for (p = sp, n = 0; p < end; p++, n++) {
+		int fl;
+		fl = 0;
+		if (*p == '\t') fl = FL_NEW | FL_TAB;
+		if (*p == '\n') fl = FL_NEW | FL_EL;
+		if (rprev.max.x + stringnwidth(obj->font, p, n) >
+		  Dx(rich->page.r)) {
+			fl = FL_NEW | FL_NL;
+		}
+
+		/* TODO:
+		 * if border of selection ...
+		 * if object has an image ... */
+
+		if (fl & FL_NEW) {
+			v = viewadd(views, obj, sp, n, 0, rprev);
+			rprev = v->r;
+			sp = p + 1;
+			n = -1;
+		}
+		if (fl & FL_TAB) {
+			int tl;
+			v = viewadd(views, obj, sp, 0, 0, rprev);
+			tl = stringwidth(font, "0") * 4;
+			v->r.max.x = ((v->r.max.x / tl) + 1) * tl;
+			rprev = v->r;
+		}
+		if (fl & FL_EL) {
+			v = viewadd(views, obj, sp, 0, 0, rprev);
+			v->r.max.x = rich->page.r.max.x;
+			rprev = v->r;
+		}
+		if (((v != nil) && (v->r.max.x >= rich->page.r.max.x)) ||
+		  (fl & FL_NL)) {
+			rprev = Rect(0, rprev.max.y, 0, rprev.max.y);
+		}
+	}
+	v = viewadd(views, obj, sp, n, 0, rprev);
+
+	return v;
+}
+
+void
+generatepage(Rich *rich, long n)
+{
+	Object **op;
+	View *v;
+	Array *views;
+	long i;
 
 	qlock(rich->l);
-	
-	page = &rich->page;
 
-	page->views->count = 0;
+	views = rich->page.views;
+	if (n < views->count) views->count = n;
 
-	r = page->r;
-
-	if (page->selstart < page->selend) {
-		selmin = page->selstart;
-		selmax = page->selend;
-	} else {
-		selmin = page->selend;
-		selmax = page->selstart;
+	v = (views->count > 0) ?
+	  arrayget(views, views->count -1) : nil;
+	for (i = n; i < rich->objects->count; i++) {
+		op = arrayget(rich->objects, i);
+		v = generateviews(rich, *op, v);
 	}
-
-	pt = r.min;
-	ymax = 0;
-
-	op = arrayget(rich->objects, 0);
-	obj = *op;
-	sp = obj->dtext->p;
-	i = 0;
-	while (i < rich->objects->count) {
-		int newline, tab;
-		View *v;
-		char *brkp;
-
-		newline = 0;
-		tab = 0;
-
-		v = arrayadd(rich->page.views);
-
-		v->obj = obj;
-		v->color = display->black;
-		if (obj->dlink->n > 0) v->color = Ilink;
-		v->page = &rich->page;
-
-		v->image = nil;
-		v->selected = (sel == SEL_IN);
-
-		v->dp = sp;
-
-		/* TODO: next line is probably incorrect */
-		v->length = obj->dtext->n;
-
-		/* this how it should look in theory, but it doesn't work:
-		 * v->length = obj->dtext->p + obj->dtext->n - sp + 1;
-		 */
-
-		if ((sel==SEL_BEFORE) &&
-		  (v->length > selmin - cc)) {
-			v->length = selmin - cc;
-			sp = v->dp + v->length;
-			sel = SEL_IN;
-		}
-		if ((sel==SEL_IN) &&
-		  (v->length > selmax - cc)) {
-			v->length = selmax - cc;
-			sp = v->dp + v->length;
-			sel = SEL_AFTER;
-		}
-
-		/* TODO: v->dp is not guaranteed to be null-terminated
-		 * so, rework following section without strpbrk
-		 */
-		if (
-		  ((brkp = strpbrk(v->dp, "\n\t")) != 0) &&
-		  (brkp <= v->dp + v->length)) {
-			v->length = brkp - v->dp;
-			sp = v->dp + v->length + 1;
-			switch (*brkp) {
-			case '\n':
-				newline = 1;
-				break;
-			case '\t':
-				tab = 1;
-				break;
-			}
-		}
-		while (stringnwidth(v->obj->font, v->dp, v->length) > (r.max.x - pt.x)) {
-			newline = 1;
-			v->length--;
-			sp = v->dp + v->length;
-		}
-
-		v->r = Rpt(
-		  pt,
-		  Pt(pt.x + stringnwidth(v->obj->font, v->dp, v->length),
-		    pt.y + v->obj->font->height));
-
-		ymax = (ymax > v->r.max.y) ? ymax : v->r.max.y;
-		pt.x = v->r.max.x;
-		if (tab != 0) {
-			int nx, tl;
-			nx = r.min.x;
-			tl = stringwidth(font, "0") * 4;
-			while (nx <= pt.x){
-				nx += tl;
-				if (nx > r.max.x) {
-					newline = 1;
-					break;
-				}
-			}
-			v->r.max.x = nx;
-			pt.x = nx;
-		}
-		if (newline != 0) {
-			v->r.max.x = r.max.x;
-			pt.x = r.min.x;
-			pt.y = ymax;
-		}
-
-		if (v->length >= obj->dtext->n - 1) {
-			i++;
-			op = arrayget(rich->objects, i);
-			obj = *op;
-			if (i < rich->objects->count) {
-				sp = obj->dtext->p;
-			}
-		}
-
-		cc += v->length;
-	}
-
-	page->max.y = ymax - r.min.y;
-	page->max.x = r.max.x - r.min.x;
+	rich->page.max = Pt(0, v->r.max.y);
 
 	qunlock(rich->l);
 }
@@ -634,8 +598,10 @@ mkobjectftree(Object *obj, File *root)
 void
 redraw(int regen)
 {
-	if (regen != 0) generatepage(&rich);
 	draw(screen, screen->r, Inormbg, nil, ZP);
+	if ((rich.objects->count != 0) && (regen != 0)) {
+		generatepage(&rich, 0);
+	}
 	drawpage(screen, &rich.page);
 	drawscrollbar();
 	flushimage(display, 1);
@@ -646,15 +612,16 @@ drawscrollbar(void)
 {
 	double D;
 	Rectangle r;
-
 	D =  (double)rich.page.max.y / (double)Dy(rich.page.r);
-	if (D == 0) return;
-
-	r = rectaddpt(Rect(
-	  0,  rich.page.scroll.y / D,
-	  11, (rich.page.scroll.y + Dy(rich.page.r)) / D
-	), rich.page.rs.min);
-
+	if (D != 0) {
+		r = rectaddpt(Rect(
+		  0,  rich.page.scroll.y / D,
+		  11, (rich.page.scroll.y + Dy(rich.page.r)) / D
+		), rich.page.rs.min);
+	} else {
+		r = rich.page.rs;
+		r.max.x--;
+	};
 	draw(screen, rich.page.rs, Iscrollbar, nil, ZP);
 	draw(screen, r, Inormbg, nil, ZP);
 }

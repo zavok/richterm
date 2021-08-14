@@ -22,6 +22,7 @@ struct Object {
 	Data *dlink;
 	Data *dimage;
 	Font *font;
+	Image *image;
 };
 
 extern Object *olast;
@@ -39,12 +40,10 @@ typedef struct View View;
 typedef struct Page Page;
 
 struct View {
-	Page *page;
 	Object *obj;
 	char *dp;
 	long length;
 	Image *color;
-	Image *image;
 	Rectangle r;
 	int selected;
 };
@@ -75,7 +74,7 @@ struct Rich {
 
 extern Rich rich;
 
-void generatepage(Rich *);
+void generatepage(Rich *, long);
 Object * newobject(Rich *, char *);
 
 typedef struct Devfsctl Devfsctl;
