@@ -48,17 +48,13 @@ struct View {
 };
 
 struct Page {
-	Array *views;
 	Point scroll;
 	Point max;
 	Rectangle r;
 	Rectangle rs;
-	usize selstart;
-	usize selend;
 };
 
 void drawview(Image *, View *);
-void drawpage(Image *, Page *);
 Point viewsize(View *);
 
 typedef struct Rich Rich;
@@ -66,6 +62,7 @@ typedef struct Rich Rich;
 struct Rich {
 	QLock *l;
 	Array *objects;
+	Array *views;
 	u64int idcount;
 	Page page;
 	struct {
@@ -76,6 +73,7 @@ struct Rich {
 
 extern Rich rich;
 
+void drawpage(Image *, Rich *);
 void generatepage(Rich *, long);
 Object * newobject(Rich *, char *);
 

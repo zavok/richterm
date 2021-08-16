@@ -11,15 +11,39 @@
 #include "array.h"
 #include "richterm.h"
 
+void resize(void);
+void shutdown(void);
+void send_interrupt(void);
+void runcmd(void *);
+void scroll(Point, Rich *);
+void mouse(Mousectl *, Mouse, int *);
+usize getsel(Point p);
+View * getview(Point p);
+
+void mpaste(Rich *);
+void msnarf(Rich *);
+void mplumb(Rich *);
+void msend(Rich *);
+
 Rich rich;
 int hostpid = -1;
 Channel *pidchan;
+Mousectl *mctl;
+Keyboardctl *kctl;
 Devfsctl *dctl;
 Fsctl *fsctl;
 Array *fonts;
 Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg;
+// Image *It1, *It2, *It3;
+char *mitems[] = {"paste", "snarf", "plumb", nil};
+void (*mfunc[])(Rich *) = {mpaste, msnarf, mplumb, nil};
 
-Image *It1, *It2, *It3;
+struct Menu mmenu = {
+	.item = mitems,
+	.gen = nil,
+	.lasthit = 0,
+};
+
 
 Object *olast;
 
@@ -29,15 +53,6 @@ enum {
 	MM_TEXT,
 	MM_SELECT,
 };
-
-void resize(void);
-void shutdown(void);
-void send_interrupt(void);
-void runcmd(void *);
-void scroll(Point, Rich *);
-void mouse(Mouse, int *);
-usize getsel(Point p);
-View * getview(Point p);
 
 void
 usage(void)
@@ -50,8 +65,6 @@ void
 threadmain(int argc, char **argv)
 {
 	Font **fp;
-	Mousectl *mctl;
-	Keyboardctl *kctl;
 	int rv[2], mmode;
 	Mouse mv;
 	Rune kv;
@@ -84,16 +97,6 @@ threadmain(int argc, char **argv)
 	Ilink = allocimage(
 	  display, Rect(0,0,1,1), screen->chan, 1, DBlue);
 
-
-	It1 = allocimage(
-	  display, Rect(0,0,1,1), screen->chan, 1, DRed);
-	It2 = allocimage(
-	  display, Rect(0,0,1,1), screen->chan, 1, DGreen);
-	It3 = allocimage(
-	  display, Rect(0,0,1,1), screen->chan, 1, DYellow);
-
-
-
 	fonts = arraycreate(sizeof(Font *), 2, nil);
 	fp = arrayadd(fonts);
 	*fp = font;
@@ -103,12 +106,9 @@ threadmain(int argc, char **argv)
 	qlock(rich.l);
 
 	rich.objects = arraycreate(sizeof(Object *), 8, nil);
-	rich.page.views = arraycreate(sizeof(View), 8, nil);
+	rich.views = arraycreate(sizeof(View), 8, nil);
 
 	rich.page.scroll = ZP;
-
-	rich.page.selstart = 0;
-	rich.page.selend = 0;
 
 	qunlock(rich.l);
 
@@ -135,7 +135,7 @@ threadmain(int argc, char **argv)
 	for (;;) {
 		switch(alt(alts)) {
 		case MOUSE:
-			mouse(mv, &mmode);
+			mouse(mctl, mv, &mmode);
 			break;
 		case RESIZE:
 			if (getwindow(display, Refnone) < 0)
@@ -222,7 +222,7 @@ threadmain(int argc, char **argv)
 }
 
 void
-mouse(Mouse mv, int *mmode)
+mouse(Mousectl *mc, Mouse mv, int *mmode)
 {
 	View *v;
 
@@ -281,6 +281,12 @@ mouse(Mouse mv, int *mmode)
 			redraw(0);
 			*mmode = MM_SELECT;
 		}
+		if (mv.buttons == 2) {
+			int f;
+			f = menuhit(2, mc, &mmenu, nil);
+			if (f >= 0) mfunc[f](&rich);
+			*mmode = MM_NONE;
+		}
 		if (mv.buttons == 4) {
 			Object *obj;
 			Data *dlink;
@@ -324,6 +330,8 @@ getsel(Point p)
 	p = addpt(subpt(p, rich.page.r.min), rich.page.scroll);
 
 	if (v == nil) return 0;
+	if (v->length == 0) return 0;
+
 	for (i = 0; i < v->length; i++) {
 		if (stringnwidth(v->obj->font, v->dp, i) >=
 		  p.x - v->r.min.x)
@@ -344,9 +352,9 @@ getview(Point p)
 
 	p = addpt(subpt(p, rich.page.r.min), rich.page.scroll);
 
-	for (i = 0; i < rich.page.views->count; i++) {
+	for (i = 0; i < rich.views->count; i++) {
 			
-		vp = arrayget(rich.page.views, i);
+		vp = arrayget(rich.views, i);
 
 		if (ptinrect(p, vp->r) != 0)
 			return vp;
@@ -355,17 +363,17 @@ getview(Point p)
 }
 
 void
-drawpage(Image *dst, Page *p)
+drawpage(Image *dst, Rich *rich)
 {
 	View *vp;
 	int i;
 
-	qlock(rich.l);
-	for (i = 0; i < p->views->count; i++) {
-		vp = arrayget(p->views, i);
+	qlock(rich->l);
+	for (i = 0; i < rich->views->count; i++) {
+		vp = arrayget(rich->views, i);
 		drawview(dst, vp);
 	}
-	qunlock(rich.l);
+	qunlock(rich->l);
 }
 
 void
@@ -417,7 +425,6 @@ drawview(Image *dst, View *v)
 		bg3 = Iselbg;
 	}
 
-
 	if (v == vmin) {
 		r1.max.x = r.min.x + stringnwidth(v->obj->font, v->dp, nmin);
 		r2.min.x = r1.max.x;
@@ -440,8 +447,6 @@ drawview(Image *dst, View *v)
 	draw(dst, r1, bg1, nil, ZP);
 	draw(dst, r2, bg2, nil, ZP);
 	draw(dst, r3, bg3, nil, ZP);
-
-
 
 	if (v->obj->image != nil) {
 		draw(dst, r, v->obj->image, nil, ZP);
@@ -496,7 +501,7 @@ generateviews(Rich *rich, Object *obj, View *v)
 		FL_NL  = 8,
 	};
 
-	views = rich->page.views;
+	views = rich->views;
 	rprev = (v != nil) ? v->r : Rect(0, 0, 0, 0);
 	end = obj->dtext->p + obj->dtext->n;
 	sp = obj->dtext->p;
@@ -552,7 +557,7 @@ generatepage(Rich *rich, long n)
 
 	qlock(rich->l);
 
-	views = rich->page.views;
+	views = rich->views;
 	if (n < views->count) views->count = n;
 
 	v = (views->count > 0) ?
@@ -685,7 +690,7 @@ redraw(int regen)
 	if ((rich.objects->count != 0) && (regen != 0)) {
 		generatepage(&rich, 0);
 	}
-	drawpage(screen, &rich.page);
+	drawpage(screen, &rich);
 	drawscrollbar();
 
 	flushimage(display, 1);
@@ -790,3 +795,106 @@ objectfree(void *v)
 
 	free(op);
 }
+
+Data *
+getseltext(Rich *rich)
+{
+	long n, nmin, nmax;
+	View *vmin, *vmax;
+	Object **o, **om, *omin, *omax;
+	Data *d;
+
+	d = malloc(sizeof(Data));
+
+	vmin = rich->sel.v[0];
+	vmax = rich->sel.v[1];
+	nmin = rich->sel.n[0];
+	nmax = rich->sel.n[1];
+	if (vmin > vmax) {
+		vmin = rich->sel.v[1];
+		vmax = rich->sel.v[0];
+		nmin = rich->sel.n[1];
+		nmax = rich->sel.n[0];
+	}
+
+	if (vmin == nil) vmin = arrayget(rich->views, 0);
+	if (vmax == nil) vmax = arrayget(rich->views, 0);
+
+	if (vmin == vmax) {
+		if (nmin > nmax) {
+			n = nmin;
+			nmin = nmax;
+			nmax = n;
+		}
+		d->n = nmax - nmin;
+		d->p = malloc(d->n + 1);
+		d->p[d->n] = '\0';
+		memcpy(d->p, vmin->dp + nmin, d->n);
+		return d;
+	}
+
+	omin = vmin->obj;
+	omax = vmax->obj;
+
+	for (om = arrayget(rich->objects, 0); *om != omin; om++); 
+	
+	for (o = om, n = nmax - nmin; o[1] != omax; o++)
+		n += (*o)->dtext->n;
+	
+	d->n = n;
+	d->p = malloc(n + 1);
+	d->p[n] = '\0';
+	
+	if ((*om)->dtext->p != nil)
+		memcpy(d->p, (*om)->dtext->p + nmin,
+		  (*om)->dtext->n - nmin);
+
+	for (o = om + 1; o[1] != omax; o++) {
+		if ((*o)->dtext->p != nil)
+			memcpy(d->p + n, (*o)->dtext->p, (*o)->dtext->n);
+		n += (*o)->dtext->n;
+	}
+
+	o++;
+
+	if ((*o)->dtext->p != nil)
+		memcpy(d->p + n, (*o)->dtext->p, nmax);
+
+	return d;
+}
+
+void
+mpaste(Rich *rich)
+{
+	print("plumbing\n");
+}
+
+void
+msnarf(Rich *rich)
+{
+	Data *d;
+	int snarf;
+	long n;
+	n = 0;
+	d = getseltext(rich);
+
+	if (d->n > 0) {
+		snarf = open("/dev/snarf", OTRUNC|OWRITE);
+		if (snarf >= 0) {
+			n = write(snarf, d->p, d->n); 
+			close(snarf);
+		}
+	}
+	if (n != d->n)
+	fprint(2, "%s: msnarf: %r\n", argv0);
+
+	free(d->p);
+	free(d);
+}
+
+void
+mplumb(Rich *rich)
+{
+	print("plumbing\n");
+}
+
