@@ -5,12 +5,12 @@ struct Array {
 	usize size;
 	usize n;
 	long count;
-	char *mem;
+	char *p;
 	void (*free)(void *);
 };
 
 Array * arraycreate(usize, long, void (*free)(void *));
 void arrayfree(Array *);
-void * arrayadd(Array *);
+void * arraygrow(Array *, long);
 void arraydel(Array *, long);
 void * arrayget(Array *, long);

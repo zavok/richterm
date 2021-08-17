@@ -1,12 +1,7 @@
 void redraw(int);
 void drawscrollbar(void);
 
-typedef struct Data Data;
-
-struct Data {
-	char *p;
-	long n;
-};
+typedef Array Data;
 
 typedef struct Object Object;
 
@@ -17,12 +12,15 @@ struct Object {
 	File *flink;
 	File *fimage;
 	char *id;
-	Data *dtext;
-	Data *dfont;
-	Data *dlink;
-	Data *dimage;
+	Array *dtext;
+	Array *dfont;
+	Array *dlink;
+	Array *dimage;
 	Font *font;
 	Image *image;
+
+	Array *text;
+	usize offset;
 };
 
 extern Object *olast;
@@ -63,6 +61,7 @@ struct Rich {
 	QLock *l;
 	Array *objects;
 	Array *views;
+	Array *text;
 	u64int idcount;
 	Page page;
 	struct {
@@ -102,7 +101,7 @@ typedef struct Faux Faux;
 struct Faux {
 	int type;
 	Object *obj;
-	Data *data;
+	Array *data;
 };
 
 enum {
@@ -112,4 +111,4 @@ enum {
 	FT_IMAGE
 };
 
-Faux * fauxalloc(Object *, Data *, int);
+Faux * fauxalloc(Object *, Array *, int);

@@ -36,17 +36,17 @@ arrayfree(Array *ap)
 }
 
 void * 
-arrayadd(Array *ap)
+arraygrow(Array *ap, long n)
 {
 	qlock(ap->l);
-	ap->count++;
+	ap->count += n;
 	if (ap->count > ap->n) {
 		ap->n += ap->n;
-		ap->mem = realloc(ap->mem, ap->size * ap->n);
+		ap->p = realloc(ap->p, ap->size * ap->n);
 	}
-	memset(arrayget(ap, ap->count - 1), 0, ap->size);
+	memset(arrayget(ap, ap->count - n), 0, ap->size * n);
 	qunlock(ap->l);
-	return (void *)(ap->mem + ap->size * (ap->count - 1));
+	return (void *)(ap->p + ap->size * (ap->count - n));
 }
 
 void
@@ -54,7 +54,7 @@ arraydel(Array *ap, long n)
 {
 	char *v;
 	qlock(ap->l);
-	v = ap->mem + ap->size * n;
+	v = ap->p + ap->size * n;
 	if (ap->free != nil) ap->free(v);
 	memcpy(v, v + ap->size, (ap->count - n) * ap->size);
 	ap->count--;
@@ -64,5 +64,5 @@ arraydel(Array *ap, long n)
 void * 
 arrayget(Array *ap, long n)
 {
-	return (void *)(ap->mem + ap->size * n);
+	return (void *)(ap->p + ap->size * n);
 }

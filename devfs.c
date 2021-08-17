@@ -15,7 +15,7 @@ devfs_read(Req *r)
 {
 	File *f;
 	Devfsctl *dctl;
-	Data dv;
+	Array dv;
 	f = r->fid->file;
 	dctl = f->aux;
 	if (f == cons) {
@@ -59,7 +59,7 @@ initdevfs(void)
 	dctl = mallocz(sizeof(Devfsctl), 1);
 	
 	dctl->wc = chancreate(sizeof(char *), 0);
-	dctl->rc = chancreate(sizeof(Data), 1024);
+	dctl->rc = chancreate(sizeof(Array), 1024);
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	if (srv.tree == nil) return nil;
 	cons = createfile(srv.tree->root, "cons", "richterm", 0666, dctl);

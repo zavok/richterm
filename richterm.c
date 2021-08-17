@@ -68,7 +68,7 @@ threadmain(int argc, char **argv)
 	int rv[2], mmode;
 	Mouse mv;
 	Rune kv;
-	Data dv;
+	Array dv;
 
 	ARGBEGIN{
 	case 'D':
@@ -78,7 +78,11 @@ threadmain(int argc, char **argv)
 		usage();
 	} ARGEND
 
-	dv = (Data) {nil, 0};
+	//dv = (Data) {.p=nil, .n=0};
+	dv.p = nil;
+	dv.n = 0;
+	dv.count = 0;
+
 	mmode = MM_NONE;
 
 	if (initdraw(0, 0, "richterm") < 0)
@@ -98,7 +102,7 @@ threadmain(int argc, char **argv)
 	  display, Rect(0,0,1,1), screen->chan, 1, DBlue);
 
 	fonts = arraycreate(sizeof(Font *), 2, nil);
-	fp = arrayadd(fonts);
+	fp = arraygrow(fonts, 1);
 	*fp = font;
 
 	rich.l = mallocz(sizeof(QLock), 1);
@@ -107,6 +111,7 @@ threadmain(int argc, char **argv)
 
 	rich.objects = arraycreate(sizeof(Object *), 8, nil);
 	rich.views = arraycreate(sizeof(View), 8, nil);
+	rich.text = arraycreate(sizeof(char), 4096, nil);
 
 	rich.page.scroll = ZP;
 
@@ -289,14 +294,14 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 		}
 		if (mv.buttons == 4) {
 			Object *obj;
-			Data *dlink;
+			Array *dlink;
 			v = getview(mv.xy);
 			obj = nil;
 			dlink = nil;
 			if (v != nil) obj = v->obj;
 			if (obj != nil) dlink = obj->dlink;
 			if ((dlink != nil) && (dlink->n > 0)) {
-				Data dv;
+				Array dv;
 				dv.n = dlink->n;
 				dv.p = malloc(dlink->n);
 				memcpy(dv.p, dlink->p, dv.n);
@@ -473,7 +478,7 @@ viewadd(Array *views, Object *obj,
 	    (Dy(rprev) > obj->font->height) ?
 	    Dy(rprev) : obj->font->height)));
 
-	vp = arrayadd(views);
+	vp = arraygrow(views, 1);
 
 	*vp = (View) {
 		obj,
@@ -584,7 +589,7 @@ getfont(Array *fonts, char *name)
 		fprint(2, "%r\n");
 		newfont = font;
 	} else {
-		fp = arrayadd(fonts);
+		fp = arraygrow(fonts, 1);
 		*fp = newfont;
 	}
 	return newfont;
@@ -604,7 +609,7 @@ scroll(Point p, Rich *r)
 }
 
 Faux *
-fauxalloc(Object *obj, Data *data, int type)
+fauxalloc(Object *obj, Array *data, int type)
 {
 	Faux *aux;
 	aux = mallocz(sizeof(Faux), 1);
@@ -620,7 +625,7 @@ newobject(Rich *rich, char *text)
 	Object *obj, **op;
 	qlock(rich->l);
 
-	op = arrayadd(rich->objects);
+	op = arraygrow(rich->objects, 1);
 
 	if (rich->objects->count > 1) {
 		Object **o1;
@@ -633,10 +638,10 @@ newobject(Rich *rich, char *text)
 
 	*op = obj;
 
-	obj->dtext = mallocz(sizeof(Data), 1);
-	obj->dfont = mallocz(sizeof(Data), 1);
-	obj->dlink = mallocz(sizeof(Data), 1);
-	obj->dimage = mallocz(sizeof(Data), 1);
+	obj->dtext = mallocz(sizeof(Array), 1);
+	obj->dfont = mallocz(sizeof(Array), 1);
+	obj->dlink = mallocz(sizeof(Array), 1);
+	obj->dimage = mallocz(sizeof(Array), 1);
 
 	if (text != nil) {
 		obj->dtext->p = text;
@@ -649,9 +654,12 @@ newobject(Rich *rich, char *text)
 	obj->dlink->p = strdup("");
 	obj->dimage->p = strdup("");
 
-	obj->id = smprint("%lld", rich->idcount);
+	obj->id = smprint("%ulld", rich->idcount);
 
 	obj->font = font;
+
+	obj->text = rich->text;
+	obj->offset = rich->text->count;
 
 	rich->idcount++;
 
@@ -796,15 +804,15 @@ objectfree(void *v)
 	free(op);
 }
 
-Data *
+Array *
 getseltext(Rich *rich)
 {
 	long n, nmin, nmax;
 	View *vmin, *vmax;
 	Object **o, **om, *omin, *omax;
-	Data *d;
+	Array *d;
 
-	d = malloc(sizeof(Data));
+	d = malloc(sizeof(Array));
 
 	vmin = rich->sel.v[0];
 	vmax = rich->sel.v[1];
@@ -872,7 +880,7 @@ mpaste(Rich *rich)
 void
 msnarf(Rich *rich)
 {
-	Data *d;
+	Array *d;
 	int snarf;
 	long n;
 	n = 0;
