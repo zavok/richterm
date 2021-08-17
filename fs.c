@@ -84,9 +84,7 @@ fs_read(Req *r)
 			readstr(r, newobj->id);
 		respond(r, nil);
 	} else if (aux != nil) {
-		qlock(rich.l);
-		readbuf(r, aux->data->p, aux->data->n);
-		qunlock(rich.l);
+		aux->read(r);
 		respond(r, nil);
 	} else respond(r, "fs_read: f->aux is nil");
 }
@@ -94,8 +92,6 @@ fs_read(Req *r)
 void
 fs_write(Req *r)
 {
-	char *buf;
-	long n, m;
 	File *f;
 	Faux *aux;
 	f = r->fid->file;
@@ -112,14 +108,12 @@ fs_write(Req *r)
 	} else if (aux != nil) {
 		qlock(rich.l);
 		/* TODO: this is not exactly finished */
-		n = r->ifcall.offset + r->ifcall.count;
-		m = (r->ifcall.offset > aux->data->n) ? aux->data->n : r->ifcall.offset;
-		buf = mallocz(n + 1, 1);
-		memcpy(buf, aux->data->p, m);
-		memcpy(buf + r->ifcall.offset, r->ifcall.data, r->ifcall.count);
-		free(aux->data->p);
-		aux->data->p = buf;
-		aux->data->n = n;
+
+		aux->data->count = 0;
+		arraygrow(aux->data, r->ifcall.offset + r->ifcall.count + 1);
+		memcpy(arrayget(aux->data, r->ifcall.offset),
+		  r->ifcall.data, r->ifcall.count);
+
 		r->ofcall.count = r->ifcall.count;
 
 		if (aux->type == FT_FONT) {
@@ -155,4 +149,24 @@ initfs(void)
 	if (ctl == nil) return nil;
 	threadpostmountsrv(&srv, "richterm", "/mnt/richterm", MREPL);
 	return fsctl;
+}
+
+void
+arrayread(Req *r)
+{
+	Faux *aux;
+	Array *data;
+	qlock(rich.l);
+	aux = r->fid->file->aux;
+	data = aux->data;
+	qlock(data->l);
+	readbuf(r, data->p, data->n);
+	qunlock(data->l);
+	qunlock(rich.l);
+}
+
+void
+arraywrite(Req *)
+{
+	/* stub */
 }

@@ -34,7 +34,7 @@ Devfsctl *dctl;
 Fsctl *fsctl;
 Array *fonts;
 Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg;
-// Image *It1, *It2, *It3;
+
 char *mitems[] = {"paste", "snarf", "plumb", nil};
 void (*mfunc[])(Rich *) = {mpaste, msnarf, mplumb, nil};
 
@@ -68,7 +68,7 @@ threadmain(int argc, char **argv)
 	int rv[2], mmode;
 	Mouse mv;
 	Rune kv;
-	Array dv;
+	Array *dv;
 
 	ARGBEGIN{
 	case 'D':
@@ -77,11 +77,6 @@ threadmain(int argc, char **argv)
 	default:
 		usage();
 	} ARGEND
-
-	//dv = (Data) {.p=nil, .n=0};
-	dv.p = nil;
-	dv.n = 0;
-	dv.count = 0;
 
 	mmode = MM_NONE;
 
@@ -175,22 +170,20 @@ threadmain(int argc, char **argv)
 				break;
 			}
 			if (kv == 0x08) { /* backspace */
-				if (olast->dtext->n > 0) olast->dtext->n--;
+				if (olast->dtext->count > 0) olast->dtext->count--;
 				redraw(1);
 				break;
 			}
 			if (rich.objects->count > 0) {
 				int n;
+				char *p;
 				n = runelen(kv);
 
 				qlock(rich.l);
 
-				olast->dtext->n+=n;
-				olast->dtext->p = realloc(
-				  olast->dtext->p, olast->dtext->n + 1);
+				p = arraygrow(olast->dtext, n);
 
-				runetochar(olast->dtext->p + olast->dtext->n - n, &kv);
-				olast->dtext->p[olast->dtext->n] = '\0';
+				runetochar(p, &kv);
 
 				qunlock(rich.l);
 
@@ -198,19 +191,18 @@ threadmain(int argc, char **argv)
 			}
 			if (kv == '\n') {
 				Object *obj;
-				obj = mkobjectftree(newobject(&rich, nil),
-				  fsctl->tree->root);
+
+				obj = mkobjectftree(newobject(&rich, nil), fsctl->tree->root);
+
 				qlock(rich.l);
 
-				obj->dtext->n = olast->dtext->n;
-				obj->dtext->p = realloc(obj->dtext->p, obj->dtext->n);
-				memcpy(obj->dtext->p, olast->dtext->p, olast->dtext->n);
+				dv = arraycreate(sizeof(char), olast->dtext->n, nil);
+				arraygrow(dv, olast->dtext->count);
+				memcpy(dv->p, olast->dtext->p, dv->count);
 
-				olast->dtext->n = 0;
-
-				dv.p = mallocz(obj->dtext->n, 1);
-				dv.n = obj->dtext->n;
-				memcpy(dv.p, obj->dtext->p, dv.n);
+				arraygrow(obj->dtext, olast->dtext->n);
+				memcpy(obj->dtext->p, olast->dtext->p, olast->dtext->count);
+				olast->dtext->count = 0;
 
 				qunlock(rich.l);
 
@@ -508,7 +500,7 @@ generateviews(Rich *rich, Object *obj, View *v)
 
 	views = rich->views;
 	rprev = (v != nil) ? v->r : Rect(0, 0, 0, 0);
-	end = obj->dtext->p + obj->dtext->n;
+	end = obj->dtext->p + obj->dtext->count;
 	sp = obj->dtext->p;
 	
 	for (p = sp, n = 0; p < end; p++, n++) {
@@ -613,9 +605,7 @@ fauxalloc(Object *obj, Array *data, int type)
 {
 	Faux *aux;
 	aux = mallocz(sizeof(Faux), 1);
-	aux->obj = obj;
-	aux->data = data;
-	aux->type = type;
+	*aux = (Faux) {type, obj, data, arrayread, arraywrite};
 	return aux;
 }
 
@@ -638,21 +628,22 @@ newobject(Rich *rich, char *text)
 
 	*op = obj;
 
-	obj->dtext = mallocz(sizeof(Array), 1);
-	obj->dfont = mallocz(sizeof(Array), 1);
-	obj->dlink = mallocz(sizeof(Array), 1);
-	obj->dimage = mallocz(sizeof(Array), 1);
+	obj->dtext = arraycreate(sizeof(char), 4096, nil);
+	obj->dfont = arraycreate(sizeof(char), 4096, nil);
+	obj->dlink = arraycreate(sizeof(char), 4096, nil);
+	obj->dimage = arraycreate(sizeof(char), 4096, nil);
 
 	if (text != nil) {
-		obj->dtext->p = text;
-		obj->dtext->n = strlen(text);
-	} else obj->dtext->p = strdup("");
+		char *p;
+		p = arraygrow(obj->dtext, strlen(text));
+		memcpy(p, text, strlen(text));
 
-	obj->dfont->p = strdup(font->name);
-	obj->dfont->n = strlen(font->name);
+		p = arraygrow(rich->text, strlen(text));
+		memcpy(p, text, strlen(text));
+	};
 
-	obj->dlink->p = strdup("");
-	obj->dimage->p = strdup("");
+	arraygrow(obj->dfont, strlen(font->name));
+	memcpy(obj->dfont->p, font->name, strlen(font->name));
 
 	obj->id = smprint("%ulld", rich->idcount);
 
@@ -847,7 +838,7 @@ getseltext(Rich *rich)
 	for (om = arrayget(rich->objects, 0); *om != omin; om++); 
 	
 	for (o = om, n = nmax - nmin; o[1] != omax; o++)
-		n += (*o)->dtext->n;
+		n += (*o)->dtext->count;
 	
 	d->n = n;
 	d->p = malloc(n + 1);
@@ -855,12 +846,12 @@ getseltext(Rich *rich)
 	
 	if ((*om)->dtext->p != nil)
 		memcpy(d->p, (*om)->dtext->p + nmin,
-		  (*om)->dtext->n - nmin);
+		  (*om)->dtext->count - nmin);
 
 	for (o = om + 1; o[1] != omax; o++) {
 		if ((*o)->dtext->p != nil)
-			memcpy(d->p + n, (*o)->dtext->p, (*o)->dtext->n);
-		n += (*o)->dtext->n;
+			memcpy(d->p + n, (*o)->dtext->p, (*o)->dtext->count);
+		n += (*o)->dtext->count;
 	}
 
 	o++;
@@ -872,9 +863,8 @@ getseltext(Rich *rich)
 }
 
 void
-mpaste(Rich *rich)
+mpaste(Rich *)
 {
-	print("plumbing\n");
 }
 
 void
@@ -901,8 +891,7 @@ msnarf(Rich *rich)
 }
 
 void
-mplumb(Rich *rich)
+mplumb(Rich *)
 {
-	print("plumbing\n");
 }
 

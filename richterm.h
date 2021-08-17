@@ -1,8 +1,6 @@
 void redraw(int);
 void drawscrollbar(void);
 
-typedef Array Data;
-
 typedef struct Object Object;
 
 struct Object {
@@ -102,6 +100,8 @@ struct Faux {
 	int type;
 	Object *obj;
 	Array *data;
+	void (*read)(Req *);
+	void (*write)(Req *);
 };
 
 enum {
@@ -112,3 +112,8 @@ enum {
 };
 
 Faux * fauxalloc(Object *, Array *, int);
+
+void textread(Req *);
+void textwrite(Req *);
+void arrayread(Req *);
+void arraywrite(Req *);

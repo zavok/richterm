@@ -3,5 +3,3 @@ Only store pointer offset in objects, so that offset of next obj is treated as e
 
 Remove Views and draw Objects directly, maybe even letter by letter.
 Keep track of object's positional info, such as start point, end poit and next line offset.
-
-After transitioning from Data to Array struct there are some inappropriate uses of Array (manual memory management instead of defined funcs, raw variable instead of pointer). Go over code and fix this.
