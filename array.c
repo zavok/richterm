@@ -39,7 +39,10 @@ void *
 arraygrow(Array *ap, long n)
 {
 	void *v;
-	if (n < 0) return nil;
+	if (n < 0) {
+		werrstr("arraygrow: negative growth size");
+		return nil;
+	}
 	v = arrayend(ap);
 	qlock(ap->l);
 	ap->count += n;
@@ -52,26 +55,28 @@ arraygrow(Array *ap, long n)
 	return (void *)(ap->p + ap->size * (ap->count - n));
 }
 
-void
+int
 arraydel(Array *ap, long n)
 {
 	char *v;
-	if ((n < 0) || (n >= ap->count)) return;
+	if ((n < 0) || (n >= ap->count)) {
+		werrstr("arraydel: out of bounds");
+		return -1;
+	}
 	qlock(ap->l);
 	v = ap->p + ap->size * n;
 	if (ap->free != nil) ap->free(v);
 	memcpy(v, v + ap->size, (ap->count - n) * ap->size);
 	ap->count--;
 	qunlock(ap->l);
+	return 0;
 }
 
 void * 
 arrayget(Array *ap, long n)
 {
-	assert(n >= 0);
-	assert(n < ap->count);
 	if ((n < 0) || (n >= ap->count)) {
-		// fprint(2, "arrayget: n out of bonds\n");
+		werrstr("arrayget: out of bounds");
 		return nil;
 	}
 	return (void *)(ap->p + ap->size * n);

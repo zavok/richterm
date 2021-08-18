@@ -12,6 +12,6 @@ struct Array {
 Array * arraycreate(long, long, void (*free)(void *));
 void arrayfree(Array *);
 void * arraygrow(Array *, long);
-void arraydel(Array *, long);
+int arraydel(Array *, long);
 void * arrayget(Array *, long);
 void * arrayend(Array *);
