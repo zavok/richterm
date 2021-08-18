@@ -19,6 +19,10 @@ struct Object {
 
 	Array *text;
 	usize offset;
+	Object *next;
+	Point startpt;
+	Point endpt;
+	Point nextlinept;
 };
 
 extern Object *olast;
@@ -72,7 +76,7 @@ extern Rich rich;
 
 void drawpage(Image *, Rich *);
 void generatepage(Rich *, long);
-Object * newobject(Rich *, char *);
+Object * newobject(Rich *, char *, long);
 
 typedef struct Devfsctl Devfsctl;
 
@@ -100,8 +104,8 @@ struct Faux {
 	int type;
 	Object *obj;
 	Array *data;
-	void (*read)(Req *);
-	void (*write)(Req *);
+	void (*read)(Req *, void *);
+	void (*write)(Req *, void *);
 };
 
 enum {
@@ -113,7 +117,7 @@ enum {
 
 Faux * fauxalloc(Object *, Array *, int);
 
-void textread(Req *);
-void textwrite(Req *);
-void arrayread(Req *);
-void arraywrite(Req *);
+void textread(Req *, void *);
+void textwrite(Req *, void *);
+void arrayread(Req *, void *);
+void arraywrite(Req *, void *);

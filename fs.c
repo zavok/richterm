@@ -66,7 +66,7 @@ fs_open(Req *r)
 {	
 	Fsctl *fsctl;
 	fsctl = new->aux;
-	newobj = mkobjectftree(newobject(&rich, nil), fsctl->tree->root);
+	newobj = mkobjectftree(newobject(&rich, nil, 0), fsctl->tree->root);
 	respond(r, nil);
 }
 
@@ -84,7 +84,7 @@ fs_read(Req *r)
 			readstr(r, newobj->id);
 		respond(r, nil);
 	} else if (aux != nil) {
-		aux->read(r);
+		aux->read(r, aux->data);
 		respond(r, nil);
 	} else respond(r, "fs_read: f->aux is nil");
 }
@@ -106,23 +106,7 @@ fs_write(Req *r)
 	} else if (f == new) {
 		respond(r, "not allowed");
 	} else if (aux != nil) {
-		qlock(rich.l);
-		/* TODO: this is not exactly finished */
-
-		aux->data->count = 0;
-		arraygrow(aux->data, r->ifcall.offset + r->ifcall.count + 1);
-		memcpy(arrayget(aux->data, r->ifcall.offset),
-		  r->ifcall.data, r->ifcall.count);
-
-		r->ofcall.count = r->ifcall.count;
-
-		if (aux->type == FT_FONT) {
-			char *path;
-			tokenize(aux->data->p, &path, 1);
-			aux->obj->font = getfont(fonts, path);
-		}
-
-		qunlock(rich.l);
+		aux->read(r, aux->data);
 		respond(r, nil);
 		redraw(1);
 	} else respond(r, "fs_write: f->aux is nil");
@@ -152,21 +136,91 @@ initfs(void)
 }
 
 void
-arrayread(Req *r)
+arrayread(Req *r, void *v)
 {
-	Faux *aux;
 	Array *data;
+	data = v;
 	qlock(rich.l);
-	aux = r->fid->file->aux;
-	data = aux->data;
 	qlock(data->l);
-	readbuf(r, data->p, data->n);
+	readbuf(r, data->p, data->count);
 	qunlock(data->l);
 	qunlock(rich.l);
 }
 
 void
-arraywrite(Req *)
+arraywrite(Req *, void *)
 {
 	/* stub */
+}
+
+void
+textread(Req *r, void *)
+{
+	Faux *aux;
+	Object *obj, *oe;
+	char *s;
+	usize n;
+
+	qlock(rich.l);
+	aux = r->fid->file->aux;
+	obj = aux->obj;
+	oe = obj->next;
+
+	if (oe == nil) 
+		n = rich.text->count;
+
+	else n = oe->offset;
+	
+	s = arrayget(rich.text, obj->offset);
+
+	print("tr: %ulld %ulld\n", n,  obj->offset);
+	
+	qlock(rich.text->l);
+
+	readbuf(r, s, n - obj->offset);
+
+	qunlock(rich.text->l);
+	qunlock(rich.l);
+}
+
+void
+textwrite(Req *r, void *)
+{
+	/* TODO: this is not exactly finished */
+	/* in particular TRUNK/APPEND handling is needed */
+
+	char *p, *pe;
+	Faux *aux;
+	Object *obj;
+	long n, m, dn;
+
+	print("textwrite\n");
+
+	qlock(rich.objects->l);
+
+	aux = r->fid->file->aux;
+	obj = aux->obj;
+	p = arrayget(rich.text, obj->offset);
+	pe = arrayget(rich.text, rich.text->count);
+	if (obj->next == nil) n = rich.text->count;
+	else n = obj->next->offset - obj->offset;
+	m = r->ifcall.count + r->ifcall.offset;
+	dn = m - n;
+	
+	qlock(rich.text->l);
+
+	if (dn > 0) arraygrow(rich.text, dn);
+	else rich.text->count += dn;
+	memcpy(p + m, p + n,  pe - p);
+	memcpy(p + r->ifcall.offset, r->ifcall.data,
+	  r->ifcall.count);
+
+	qunlock(rich.text->l);
+
+	for (; obj != nil; obj = obj->next) {
+		obj->offset += dn;
+	}
+
+	qunlock(rich.objects->l);
+
 }

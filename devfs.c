@@ -8,7 +8,7 @@
 #include "array.h"
 #include "richterm.h"
 
-File *cons, *consctl;
+File *cons, *consctl, *text;
 
 void
 devfs_read(Req *r)
@@ -27,8 +27,10 @@ devfs_read(Req *r)
 		respond(r, nil);
 	} else if (f == consctl) {
 		respond(r, "not implemented");
-	}
-	else respond(r, "what");
+	}else if (f == text) {
+		arrayread(r, rich.text);
+		respond(r, nil);
+	} else respond(r, "what");
 }
 
 void
@@ -37,10 +39,7 @@ devfs_write(Req *r)
 	File *f;
 	f = r->fid->file;
 	if (f == cons){
-		char *buf;
-		buf = mallocz(r->ifcall.count + 1, 1);
-		memcpy(buf, r->ifcall.data, r->ifcall.count);
-		mkobjectftree(newobject(&rich, buf), fsctl->tree->root);
+		mkobjectftree(newobject(&rich, r->ifcall.data, r->ifcall.count), fsctl->tree->root);
 		redraw(1);
 		r->ofcall.count = r->ifcall.count;
 		respond(r, nil);
@@ -67,6 +66,7 @@ initdevfs(void)
 	if (cons == nil) return nil;
 	consctl = createfile(srv.tree->root, "consctl", "richterm", 0666, dctl);
 	if (consctl == nil) return nil;
+	text = createfile(srv.tree->root, "text", "richterm", 0444, dctl);
 	threadpostmountsrv(&srv, nil, "/dev", MBEFORE);
 	return dctl;
 }

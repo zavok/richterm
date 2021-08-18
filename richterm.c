@@ -25,6 +25,8 @@ void msnarf(Rich *);
 void mplumb(Rich *);
 void msend(Rich *);
 
+void newdraw(void);
+
 Rich rich;
 int hostpid = -1;
 Channel *pidchan;
@@ -33,7 +35,7 @@ Keyboardctl *kctl;
 Devfsctl *dctl;
 Fsctl *fsctl;
 Array *fonts;
-Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg;
+Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg, *Itext;
 
 char *mitems[] = {"paste", "snarf", "plumb", nil};
 void (*mfunc[])(Rich *) = {mpaste, msnarf, mplumb, nil};
@@ -96,6 +98,8 @@ threadmain(int argc, char **argv)
 	Ilink = allocimage(
 	  display, Rect(0,0,1,1), screen->chan, 1, DBlue);
 
+	Itext = display->black;
+
 	fonts = arraycreate(sizeof(Font *), 2, nil);
 	fp = arraygrow(fonts, 1);
 	*fp = font;
@@ -112,7 +116,7 @@ threadmain(int argc, char **argv)
 
 	qunlock(rich.l);
 
-	olast = newobject(&rich, nil);
+	olast = newobject(&rich, nil, 0);
 
 	resize();
 	redraw(1);
@@ -144,6 +148,12 @@ threadmain(int argc, char **argv)
 			redraw(1);
 			break;
 		case KBD:
+			if (kv == 0xf001) {
+				draw(screen, rich.page.r, display->white, nil, ZP);
+				newdraw();
+				flushimage(display, 1);
+				break;
+			}
 			if (kv == 0x7f) shutdown(); /* delete */
 			if (kv == 0xf00e) { /* d-pad up */
 				scroll(
@@ -190,21 +200,19 @@ threadmain(int argc, char **argv)
 				redraw(1);
 			}
 			if (kv == '\n') {
-				Object *obj;
-
-				obj = mkobjectftree(newobject(&rich, nil), fsctl->tree->root);
-
 				qlock(rich.l);
 
 				dv = arraycreate(sizeof(char), olast->dtext->n, nil);
 				arraygrow(dv, olast->dtext->count);
 				memcpy(dv->p, olast->dtext->p, dv->count);
 
-				arraygrow(obj->dtext, olast->dtext->n);
-				memcpy(obj->dtext->p, olast->dtext->p, olast->dtext->count);
-				olast->dtext->count = 0;
-
 				qunlock(rich.l);
+
+				mkobjectftree(
+				  newobject(&rich, olast->dtext->p, olast->dtext->count),
+				  fsctl->tree->root);
+
+				olast->dtext->count = 0;
 
 				nbsend(dctl->rc, &dv);
 
@@ -610,49 +618,55 @@ fauxalloc(Object *obj, Array *data, int type)
 }
 
 Object *
-newobject(Rich *rich, char *text)
+newobject(Rich *rich, char *p, long n)
 {
-	Object *obj, **op;
+	Object *obj, **op, **old;
 	qlock(rich->l);
+
+	old = arrayget(rich->objects, rich->objects->count - 1);
 
 	op = arraygrow(rich->objects, 1);
 
 	if (rich->objects->count > 1) {
 		Object **o1;
 		o1 = arrayget(rich->objects, rich->objects->count - 2);
+
 		*op = *o1;
 		op = o1;
+	}
+
+	if (rich->objects->count > 2) {
+		(*(op - 2))->next = *op;
 	}
 
 	obj = mallocz(sizeof(Object), 1);
 
 	*op = obj;
 
+	obj->offset = rich->text->count;
+
+	print("offset %ulld\n", obj->offset);
+
+	obj->id = smprint("%ulld", rich->idcount++);
+	obj->font = font;
+	obj->text = rich->text;
+
 	obj->dtext = arraycreate(sizeof(char), 4096, nil);
 	obj->dfont = arraycreate(sizeof(char), 4096, nil);
 	obj->dlink = arraycreate(sizeof(char), 4096, nil);
 	obj->dimage = arraycreate(sizeof(char), 4096, nil);
 
-	if (text != nil) {
-		char *p;
-		p = arraygrow(obj->dtext, strlen(text));
-		memcpy(p, text, strlen(text));
+	if (p != nil) {
+		char *pp;
+		pp = arraygrow(obj->dtext, n);
+		memcpy(pp, p, n);
 
-		p = arraygrow(rich->text, strlen(text));
-		memcpy(p, text, strlen(text));
+		pp = arraygrow(rich->text, n);
+		memcpy(pp, p, n);
 	};
 
 	arraygrow(obj->dfont, strlen(font->name));
 	memcpy(obj->dfont->p, font->name, strlen(font->name));
-
-	obj->id = smprint("%ulld", rich->idcount);
-
-	obj->font = font;
-
-	obj->text = rich->text;
-	obj->offset = rich->text->count;
-
-	rich->idcount++;
 
 	qunlock(rich->l);
 	return obj;
@@ -671,6 +685,9 @@ mkobjectftree(Object *obj, File *root)
 	auxfont  = fauxalloc(obj, obj->dfont, FT_FONT);
 	auxlink  = fauxalloc(obj, obj->dlink, FT_LINK);
 	auximage = fauxalloc(obj, obj->dimage, FT_IMAGE);
+
+	auxtext->read = textread;
+	auxtext->write = textwrite;
 
 	obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666, auxtext);
 	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666, auxfont);
@@ -895,3 +912,65 @@ mplumb(Rich *)
 {
 }
 
+void
+_drawchar(char *p, Point pt, Font *font, Image *fg, Image *bg)
+{
+	Point ptact, ptnew;
+	ptact = subpt(addpt(pt, rich.page.r.min), rich.page.scroll);
+	ptnew = stringnbg(screen, ptact, fg, ZP, font, p, 1, bg, ZP);
+}
+
+void
+drawchar(Object *obj, long n, Point *cur)
+{
+	int tab, cw;
+	char *p;
+	p = arrayget(rich.text, n);
+	cw = stringnwidth(obj->font, p, 1);
+
+	if (cur->x + cw > Dx(rich.page.r)) {
+		cur->x = 0;
+		cur->y += obj->font->height;
+	}
+
+	switch (*p) {
+	case '\n':
+		cur->x = 0;
+		cur->y += obj->font->height;
+//		obj->nextlinept.y = cur->y + obj->font->height;
+		break;
+	case '\t':
+		tab = stringwidth(font, "0") * 4;
+		cur->x = (cur->x / tab + 1) * tab;
+		break;
+	default:
+		_drawchar(p, *cur, obj->font, Itext, Inormbg);
+		cur->x += cw;
+	}
+}
+
+void
+drawobject(Object *obj, Point *cur)
+{
+	long i, n;
+	if (obj->next == nil) n = rich.text->count;
+	else n = obj->next->offset;
+	for (i = obj->offset; i < n; i++) {
+		drawchar(obj, i, cur);
+	}
+}
+
+void
+newdraw(void)
+{
+	Point cur, nextlinept;
+	Object **op;
+	long i;
+
+	cur = ZP;
+	nextlinept = cur;
+	for (i = 0; i < rich.objects->count; i++) {
+		op = arrayget(rich.objects, i);
+		drawobject(*op, &cur);
+	}
+}

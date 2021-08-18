@@ -38,6 +38,7 @@ arrayfree(Array *ap)
 void * 
 arraygrow(Array *ap, long n)
 {
+	if (n < 0) return nil;
 	qlock(ap->l);
 	ap->count += n;
 	if (ap->count > ap->n) {
@@ -53,6 +54,7 @@ void
 arraydel(Array *ap, long n)
 {
 	char *v;
+	if ((n < 0) || (n > ap->count)) return;
 	qlock(ap->l);
 	v = ap->p + ap->size * n;
 	if (ap->free != nil) ap->free(v);
@@ -64,5 +66,6 @@ arraydel(Array *ap, long n)
 void * 
 arrayget(Array *ap, long n)
 {
+	if ((n < 0) || (n > ap->count)) return nil;
 	return (void *)(ap->p + ap->size * n);
 }
