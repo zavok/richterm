@@ -20,7 +20,6 @@ devfs_read(Req *r)
 	dctl = f->aux;
 	if (f == cons) {
 		recv(dctl->rc, &dv);
-		//print("got: %s", dv->p);
 		r->ofcall.count = dv->count;
 		memcpy(r->ofcall.data, dv->p, dv->count);
 		arrayfree(dv);
@@ -37,11 +36,33 @@ void
 devfs_write(Req *r)
 {
 	File *f;
+	Array *buf;
+	buf = nil;
 	f = r->fid->file;
 	if (f == cons){
-		mkobjectftree(newobject(&rich, r->ifcall.data, r->ifcall.count), fsctl->tree->root);
-		redraw(1);
 		r->ofcall.count = r->ifcall.count;
+		
+		if (rich.text->count - olast->offset > 0) {
+			buf = arraycreate(sizeof(char),
+			  rich.text->count - olast->offset, nil);
+
+			memcpy(buf->p, arrayget(rich.text, olast->offset),
+			  rich.text->count - olast->offset);
+		}
+
+		rich.objects->count--;
+
+		mkobjectftree(
+		  newobject(&rich, r->ifcall.data, r->ifcall.count),
+		  fsctl->tree->root);
+
+		/* TODO: free olast */
+		if (buf != nil) {
+			olast = newobject(&rich, buf->p, buf->count);
+			arrayfree(buf);
+		} else olast = newobject(&rich, nil, 0);
+
+		redraw(1);
 		respond(r, nil);
 	} else if (f == consctl) {
 		respond(r, "not implemented");

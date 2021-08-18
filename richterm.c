@@ -17,8 +17,6 @@ void send_interrupt(void);
 void runcmd(void *);
 void scroll(Point, Rich *);
 void mouse(Mousectl *, Mouse, int *);
-usize getsel(Point p);
-View * getview(Point p);
 
 void mpaste(Rich *);
 void msnarf(Rich *);
@@ -109,7 +107,6 @@ threadmain(int argc, char **argv)
 	qlock(rich.l);
 
 	rich.objects = arraycreate(sizeof(Object *), 8, nil);
-	rich.views = arraycreate(sizeof(View), 8, nil);
 	rich.text = arraycreate(sizeof(char), 4096, nil);
 
 	rich.page.scroll = ZP;
@@ -180,7 +177,8 @@ threadmain(int argc, char **argv)
 				break;
 			}
 			if (kv == 0x08) { /* backspace */
-				if (olast->dtext->count > 0) olast->dtext->count--;
+				/*TODO: should stop at last offset, not 0 */
+				if (rich.text->count > 0) rich.text->count--;
 				redraw(1);
 				break;
 			}
@@ -191,8 +189,7 @@ threadmain(int argc, char **argv)
 
 				qlock(rich.l);
 
-				p = arraygrow(olast->dtext, n);
-
+				p = arraygrow(rich.text, n);
 				runetochar(p, &kv);
 
 				qunlock(rich.l);
@@ -202,17 +199,18 @@ threadmain(int argc, char **argv)
 			if (kv == '\n') {
 				qlock(rich.l);
 
-				dv = arraycreate(sizeof(char), olast->dtext->n, nil);
-				arraygrow(dv, olast->dtext->count);
-				memcpy(dv->p, olast->dtext->p, dv->count);
+				dv = arraycreate(sizeof(char),
+				  rich.text->count - olast->offset, nil);
+				arraygrow(dv, rich.text->count - olast->offset);
+				memcpy(dv->p,
+				  arrayget(rich.text, olast->offset),
+				  rich.text->count - olast->offset);
 
 				qunlock(rich.l);
 
-				mkobjectftree(
-				  newobject(&rich, olast->dtext->p, olast->dtext->count),
-				  fsctl->tree->root);
-
-				olast->dtext->count = 0;
+				
+				mkobjectftree(olast, fsctl->tree->root);
+				olast = newobject(&rich, nil, 0);
 
 				nbsend(dctl->rc, &dv);
 
@@ -229,8 +227,6 @@ threadmain(int argc, char **argv)
 void
 mouse(Mousectl *mc, Mouse mv, int *mmode)
 {
-	View *v;
-
 	if (mv.buttons == 0) {
 		*mmode = MM_NONE;
 		return;
@@ -279,10 +275,6 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 		break;
 	case MM_TEXT:
 		if (mv.buttons == 1) {
-			rich.sel.n[0] = getsel(mv.xy);
-			rich.sel.v[0] = getview(mv.xy);
-			rich.sel.n[1] = rich.sel.n[0];
-			rich.sel.v[1] = rich.sel.v[0];
 			redraw(0);
 			*mmode = MM_SELECT;
 		}
@@ -293,20 +285,6 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 			*mmode = MM_NONE;
 		}
 		if (mv.buttons == 4) {
-			Object *obj;
-			Array *dlink;
-			v = getview(mv.xy);
-			obj = nil;
-			dlink = nil;
-			if (v != nil) obj = v->obj;
-			if (obj != nil) dlink = obj->dlink;
-			if ((dlink != nil) && (dlink->n > 0)) {
-				Array dv;
-				dv.n = dlink->n;
-				dv.p = malloc(dlink->n);
-				memcpy(dv.p, dlink->p, dv.n);
-				nbsend(dctl->rc, &dv);
-			}
 			break;
 		}
 	case MM_SELECT:
@@ -318,262 +296,8 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 			/* paste */
 			break;
 		}
-		rich.sel.n[1] = getsel(mv.xy);
-		rich.sel.v[1] = getview(mv.xy);
 		redraw(0);
 	}
-}
-
-usize
-getsel(Point p)
-{
-	View *v;
-	long i;
-
-	v = getview(p);
-
-	p = addpt(subpt(p, rich.page.r.min), rich.page.scroll);
-
-	if (v == nil) return 0;
-	if (v->length == 0) return 0;
-
-	for (i = 0; i < v->length; i++) {
-		if (stringnwidth(v->obj->font, v->dp, i) >=
-		  p.x - v->r.min.x)
-			break;
-	}
-	return i - 1;
-}
-
-View *
-getview(Point p)
-{
-	int i;
-	View *vp;
-
-
-	if (p.x < rich.page.r.min.x) p.x = rich.page.r.min.x;
-	if (p.x > rich.page.r.max.x) p.x = rich.page.r.max.x;
-
-	p = addpt(subpt(p, rich.page.r.min), rich.page.scroll);
-
-	for (i = 0; i < rich.views->count; i++) {
-			
-		vp = arrayget(rich.views, i);
-
-		if (ptinrect(p, vp->r) != 0)
-			return vp;
-	}
-	return nil;
-}
-
-void
-drawpage(Image *dst, Rich *rich)
-{
-	View *vp;
-	int i;
-
-	qlock(rich->l);
-	for (i = 0; i < rich->views->count; i++) {
-		vp = arrayget(rich->views, i);
-		drawview(dst, vp);
-	}
-	qunlock(rich->l);
-}
-
-void
-drawview(Image *dst, View *v)
-{
-	Image *bg1, *bg2, *bg3;
-	Rectangle r, r1, r2, r3;
-	View *vmin, *vmax;
-	long nmin, nmax;
-
-	if (rich.sel.v[0] < rich.sel.v[1]) {
-		vmin = rich.sel.v[0];
-		vmax = rich.sel.v[1];
-		nmin = rich.sel.n[0];
-		nmax = rich.sel.n[1];
-	} else {
-		vmin = rich.sel.v[1];
-		vmax = rich.sel.v[0];
-		nmin = rich.sel.n[1];
-		nmax = rich.sel.n[0];
-	}
-
-	if (vmin == vmax) {
-		if (rich.sel.n[0] < rich.sel.n[1]) {
-			nmin = rich.sel.n[0];
-			nmax = rich.sel.n[1];
-		} else {
-			nmin = rich.sel.n[1];
-			nmax = rich.sel.n[0];
-		}
-	}
-
-	r = rectaddpt(rectsubpt(v->r, rich.page.scroll),
-	  rich.page.r.min);
-
-	r1 = r;
-	r1.max.x = r.min.x;
-	r2 = r;
-	r3 = r;
-	r3.min.x = r.max.x;
-
-	bg1 = Inormbg;
-	bg2 = Inormbg;
-	bg3 = Inormbg;
-
-	if ((v > vmin) && (v < vmax)) {
-		bg1 = Iselbg;
-		bg2 = Iselbg;
-		bg3 = Iselbg;
-	}
-
-	if (v == vmin) {
-		r1.max.x = r.min.x + stringnwidth(v->obj->font, v->dp, nmin);
-		r2.min.x = r1.max.x;
-		bg1 = Inormbg;//Iselbg;
-		bg2 = Iselbg;//Iselbg;
-		bg3 = Iselbg;//Iselbg;
-	}
-	if (v == vmax) {
-		r2.max.x = r.min.x + stringnwidth(v->obj->font, v->dp, nmax);
-		r3.min.x = r2.max.x;
-		bg1 = Iselbg;//Iselbg;
-		bg2 = Iselbg;//Iselbg;
-		bg3 = Inormbg;//Iselbg;
-	}
-	if (vmin == vmax) {
-		bg1 = Inormbg;
-		bg3 = Inormbg;//Iselbg;
-	}
-
-	draw(dst, r1, bg1, nil, ZP);
-	draw(dst, r2, bg2, nil, ZP);
-	draw(dst, r3, bg3, nil, ZP);
-
-	if (v->obj->image != nil) {
-		draw(dst, r, v->obj->image, nil, ZP);
-		return;
-	}
-
-	stringn(dst, r.min, v->color, ZP,
-	  v->obj->font, v->dp, v->length);
-}
-
-View *
-viewadd(Array *views, Object *obj,
-  char *dp, long len, Rectangle rprev)
-{
-	View *vp;
-	Rectangle r;
-	Point p;
-
-	p = Pt(rprev.max.x, rprev.min.y);
-
-	r = Rpt(p,
-	  addpt(p, Pt(
-	    stringnwidth(obj->font, dp, len),
-	    (Dy(rprev) > obj->font->height) ?
-	    Dy(rprev) : obj->font->height)));
-
-	vp = arraygrow(views, 1);
-
-	*vp = (View) {
-		obj,
-		dp,
-		len,
-		display->black,
-		r,
-	};
-
-	return vp;
-}
-
-View *
-generateviews(Rich *rich, Object *obj, View *v)
-{
-	Array *views;
-	Rectangle rprev;
-	char *sp, *p, *end;
-	long n;
-
-	enum {
-		FL_NEW = 1,
-		FL_TAB = 2,
-		FL_EL  = 4,
-		FL_NL  = 8,
-	};
-
-	views = rich->views;
-	rprev = (v != nil) ? v->r : Rect(0, 0, 0, 0);
-	end = obj->dtext->p + obj->dtext->count;
-	sp = obj->dtext->p;
-	
-	for (p = sp, n = 0; p < end; p++, n++) {
-		int fl;
-		fl = 0;
-		if (*p == '\t') fl = FL_NEW | FL_TAB;
-		if (*p == '\n') fl = FL_NEW | FL_EL;
-		if (rprev.max.x + stringnwidth(obj->font, p, n) >
-		  Dx(rich->page.r)) {
-			fl = FL_NEW | FL_NL;
-		}
-		
-		/* TODO:
-		 * if object has an image ... */
-
-		if (fl & FL_NEW) {
-			v = viewadd(views, obj, sp, n, rprev);
-			rprev = v->r;
-			sp = p + 1;
-			n = -1;
-		}
-		if (fl & FL_TAB) {
-			int tl;
-			v = viewadd(views, obj, sp, 0, rprev);
-			tl = stringwidth(font, "0") * 4;
-			v->r.max.x = ((v->r.max.x / tl) + 1) * tl;
-			rprev = v->r;
-		}
-		if (fl & FL_EL) {
-			v = viewadd(views, obj, sp, 0, rprev);
-			v->r.max.x = rich->page.r.max.x;
-			rprev = v->r;
-		}
-		if (((v != nil) && (v->r.max.x >= rich->page.r.max.x)) ||
-		  (fl & FL_NL)) {
-			rprev = Rect(0, rprev.max.y, 0, rprev.max.y);
-		}
-	}
-	v = viewadd(views, obj, sp, n, rprev);
-
-	return v;
-}
-
-void
-generatepage(Rich *rich, long n)
-{
-	Object **op;
-	View *v;
-	Array *views;
-	long i;
-
-	qlock(rich->l);
-
-	views = rich->views;
-	if (n < views->count) views->count = n;
-
-	v = (views->count > 0) ?
-	  arrayget(views, views->count -1) : nil;
-	for (i = n; i < rich->objects->count; i++) {
-		op = arrayget(rich->objects, i);
-		v = generateviews(rich, *op, v);
-	}
-	rich->page.max = Pt(0, v->r.max.y);
-
-	qunlock(rich->l);
 }
 
 Font *
@@ -623,50 +347,31 @@ newobject(Rich *rich, char *p, long n)
 	Object *obj, **op, **old;
 	qlock(rich->l);
 
-	old = arrayget(rich->objects, rich->objects->count - 1);
+	old = (rich->objects->count > 0) ?
+	  arrayget(rich->objects, rich->objects->count - 1) : nil;
 
 	op = arraygrow(rich->objects, 1);
-
-	if (rich->objects->count > 1) {
-		Object **o1;
-		o1 = arrayget(rich->objects, rich->objects->count - 2);
-
-		*op = *o1;
-		op = o1;
-	}
-
-	if (rich->objects->count > 2) {
-		(*(op - 2))->next = *op;
-	}
 
 	obj = mallocz(sizeof(Object), 1);
 
 	*op = obj;
 
+	if (old != nil) (*old)->next = obj;
+
 	obj->offset = rich->text->count;
 
-	print("offset %ulld\n", obj->offset);
-
-	obj->id = smprint("%ulld", rich->idcount++);
 	obj->font = font;
 	obj->text = rich->text;
 
-	obj->dtext = arraycreate(sizeof(char), 4096, nil);
-	obj->dfont = arraycreate(sizeof(char), 4096, nil);
 	obj->dlink = arraycreate(sizeof(char), 4096, nil);
 	obj->dimage = arraycreate(sizeof(char), 4096, nil);
 
 	if (p != nil) {
 		char *pp;
-		pp = arraygrow(obj->dtext, n);
-		memcpy(pp, p, n);
 
 		pp = arraygrow(rich->text, n);
 		memcpy(pp, p, n);
 	};
-
-	arraygrow(obj->dfont, strlen(font->name));
-	memcpy(obj->dfont->p, font->name, strlen(font->name));
 
 	qunlock(rich->l);
 	return obj;
@@ -679,15 +384,20 @@ mkobjectftree(Object *obj, File *root)
 
 	qlock(rich.l);
 
+	obj->id = smprint("%ulld", ++rich.idcount);
+
 	obj->dir = createfile(root, obj->id, "richterm", DMDIR|0555, nil);
 
-	auxtext  = fauxalloc(obj, obj->dtext, FT_TEXT);
-	auxfont  = fauxalloc(obj, obj->dfont, FT_FONT);
+	auxtext  = fauxalloc(obj, nil, FT_TEXT);
+	auxfont  = fauxalloc(obj, nil, FT_FONT);
 	auxlink  = fauxalloc(obj, obj->dlink, FT_LINK);
 	auximage = fauxalloc(obj, obj->dimage, FT_IMAGE);
 
 	auxtext->read = textread;
 	auxtext->write = textwrite;
+
+	auxfont->read = fontread;
+	auxfont->write = fontwrite;
 
 	obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666, auxtext);
 	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666, auxfont);
@@ -700,14 +410,12 @@ mkobjectftree(Object *obj, File *root)
 
 
 void
-redraw(int regen)
+redraw(int)
 {
 	draw(screen, screen->r, Inormbg, nil, ZP);
-	if ((rich.objects->count != 0) && (regen != 0)) {
-		generatepage(&rich, 0);
-	}
-	drawpage(screen, &rich);
 	drawscrollbar();
+
+	newdraw();
 
 	flushimage(display, 1);
 }
@@ -812,99 +520,14 @@ objectfree(void *v)
 	free(op);
 }
 
-Array *
-getseltext(Rich *rich)
-{
-	long n, nmin, nmax;
-	View *vmin, *vmax;
-	Object **o, **om, *omin, *omax;
-	Array *d;
-
-	d = malloc(sizeof(Array));
-
-	vmin = rich->sel.v[0];
-	vmax = rich->sel.v[1];
-	nmin = rich->sel.n[0];
-	nmax = rich->sel.n[1];
-	if (vmin > vmax) {
-		vmin = rich->sel.v[1];
-		vmax = rich->sel.v[0];
-		nmin = rich->sel.n[1];
-		nmax = rich->sel.n[0];
-	}
-
-	if (vmin == nil) vmin = arrayget(rich->views, 0);
-	if (vmax == nil) vmax = arrayget(rich->views, 0);
-
-	if (vmin == vmax) {
-		if (nmin > nmax) {
-			n = nmin;
-			nmin = nmax;
-			nmax = n;
-		}
-		d->n = nmax - nmin;
-		d->p = malloc(d->n + 1);
-		d->p[d->n] = '\0';
-		memcpy(d->p, vmin->dp + nmin, d->n);
-		return d;
-	}
-
-	omin = vmin->obj;
-	omax = vmax->obj;
-
-	for (om = arrayget(rich->objects, 0); *om != omin; om++); 
-	
-	for (o = om, n = nmax - nmin; o[1] != omax; o++)
-		n += (*o)->dtext->count;
-	
-	d->n = n;
-	d->p = malloc(n + 1);
-	d->p[n] = '\0';
-	
-	if ((*om)->dtext->p != nil)
-		memcpy(d->p, (*om)->dtext->p + nmin,
-		  (*om)->dtext->count - nmin);
-
-	for (o = om + 1; o[1] != omax; o++) {
-		if ((*o)->dtext->p != nil)
-			memcpy(d->p + n, (*o)->dtext->p, (*o)->dtext->count);
-		n += (*o)->dtext->count;
-	}
-
-	o++;
-
-	if ((*o)->dtext->p != nil)
-		memcpy(d->p + n, (*o)->dtext->p, nmax);
-
-	return d;
-}
-
 void
 mpaste(Rich *)
 {
 }
 
 void
-msnarf(Rich *rich)
+msnarf(Rich *)
 {
-	Array *d;
-	int snarf;
-	long n;
-	n = 0;
-	d = getseltext(rich);
-
-	if (d->n > 0) {
-		snarf = open("/dev/snarf", OTRUNC|OWRITE);
-		if (snarf >= 0) {
-			n = write(snarf, d->p, d->n); 
-			close(snarf);
-		}
-	}
-	if (n != d->n)
-	fprint(2, "%s: msnarf: %r\n", argv0);
-
-	free(d->p);
-	free(d);
 }
 
 void
@@ -953,6 +576,10 @@ void
 drawobject(Object *obj, Point *cur)
 {
 	long i, n;
+	if ((obj->offset > rich.text->count) || (obj->offset < 0)) {
+		fprint(2, "drawobject: object out of bonds: %ld %ld\n", obj->offset, rich.text->count);
+		return;
+	}
 	if (obj->next == nil) n = rich.text->count;
 	else n = obj->next->offset;
 	for (i = obj->offset; i < n; i++) {
@@ -969,8 +596,12 @@ newdraw(void)
 
 	cur = ZP;
 	nextlinept = cur;
+	qlock(rich.l);
+	qlock(rich.text->l);
 	for (i = 0; i < rich.objects->count; i++) {
 		op = arrayget(rich.objects, i);
 		drawobject(*op, &cur);
 	}
+	qunlock(rich.text->l);
+	qunlock(rich.l);
 }

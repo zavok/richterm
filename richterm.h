@@ -10,15 +10,13 @@ struct Object {
 	File *flink;
 	File *fimage;
 	char *id;
-	Array *dtext;
-	Array *dfont;
 	Array *dlink;
 	Array *dimage;
 	Font *font;
 	Image *image;
 
 	Array *text;
-	usize offset;
+	long offset;
 	Object *next;
 	Point startpt;
 	Point endpt;
@@ -35,17 +33,7 @@ extern Array *fonts;
 
 Font* getfont(Array *, char *);
 
-typedef struct View View;
-
 typedef struct Page Page;
-
-struct View {
-	Object *obj;
-	char *dp;
-	long length;
-	Image *color;
-	Rectangle r;
-};
 
 struct Page {
 	Point scroll;
@@ -54,22 +42,14 @@ struct Page {
 	Rectangle rs;
 };
 
-void drawview(Image *, View *);
-Point viewsize(View *);
-
 typedef struct Rich Rich;
 
 struct Rich {
 	QLock *l;
 	Array *objects;
-	Array *views;
 	Array *text;
 	u64int idcount;
 	Page page;
-	struct {
-		View *v[2];
-		long n[2];
-	} sel;
 };
 
 extern Rich rich;
@@ -121,3 +101,5 @@ void textread(Req *, void *);
 void textwrite(Req *, void *);
 void arrayread(Req *, void *);
 void arraywrite(Req *, void *);
+void fontread(Req *, void *);
+void fontwrite(Req *, void *);

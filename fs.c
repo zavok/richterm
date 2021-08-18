@@ -106,7 +106,7 @@ fs_write(Req *r)
 	} else if (f == new) {
 		respond(r, "not allowed");
 	} else if (aux != nil) {
-		aux->read(r, aux->data);
+		aux->write(r, aux->data);
 		respond(r, nil);
 		redraw(1);
 	} else respond(r, "fs_write: f->aux is nil");
@@ -166,14 +166,10 @@ textread(Req *r, void *)
 	obj = aux->obj;
 	oe = obj->next;
 
-	if (oe == nil) 
-		n = rich.text->count;
-
+	if (oe == nil) n = rich.text->count;
 	else n = oe->offset;
 	
 	s = arrayget(rich.text, obj->offset);
-
-	print("tr: %ulld %ulld\n", n,  obj->offset);
 	
 	qlock(rich.text->l);
 
@@ -194,33 +190,62 @@ textwrite(Req *r, void *)
 	Object *obj;
 	long n, m, dn;
 
-	print("textwrite\n");
-
 	qlock(rich.objects->l);
 
 	aux = r->fid->file->aux;
 	obj = aux->obj;
-	p = arrayget(rich.text, obj->offset);
-	pe = arrayget(rich.text, rich.text->count);
+	p = rich.text->p + obj->offset;
+	pe = rich.text->p + rich.text->count;
 	if (obj->next == nil) n = rich.text->count;
 	else n = obj->next->offset - obj->offset;
 	m = r->ifcall.count + r->ifcall.offset;
 	dn = m - n;
-	
-	qlock(rich.text->l);
 
 	if (dn > 0) arraygrow(rich.text, dn);
 	else rich.text->count += dn;
+	
+	qlock(rich.text->l);
+
 	memcpy(p + m, p + n,  pe - p);
 	memcpy(p + r->ifcall.offset, r->ifcall.data,
 	  r->ifcall.count);
 
 	qunlock(rich.text->l);
 
-	for (; obj != nil; obj = obj->next) {
+	for (obj = obj->next; obj != nil; obj = obj->next) {
 		obj->offset += dn;
 	}
 
 	qunlock(rich.objects->l);
 
+}
+
+void
+fontread(Req *r, void *)
+{
+	Faux *aux;
+	qlock(rich.l);
+	aux = r->fid->file->aux;
+	readstr(r, aux->obj->font->name);
+	qunlock(rich.l);
+}
+
+void
+fontwrite(Req *r, void *)
+{
+	char buf[4096], *bp;
+	Faux *aux;
+	qlock(rich.l);
+	aux = r->fid->file->aux;
+	memcpy(buf, r->ifcall.data, r->ifcall.count);
+	buf[r->ifcall.count] = '\0';
+
+	for(bp = buf+ r->ifcall.count - 1; bp >= buf; bp--)
+		if ((*bp==' ')||(*bp=='\t')||(*bp=='\n')) *bp = '\0';
+
+	for(bp = buf; bp < buf + r->ifcall.count - 1; bp++)
+		if ((*bp!=' ')&&(*bp!='\t')&&(*bp!='\n')) break;
+
+	aux->obj->font = getfont(fonts, bp);
+	qunlock(rich.l);
 }
