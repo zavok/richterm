@@ -356,7 +356,10 @@ newobject(Rich *rich, char *p, long n)
 
 	*op = obj;
 
-	if (old != nil) (*old)->next = obj;
+	if ((old != nil) && (*old != nil)) {
+		(*old)->next = obj;
+		obj->prev = *old;
+	}
 
 	obj->offset = rich->text->count;
 
@@ -551,16 +554,12 @@ drawchar(Object *obj, long n, Point *cur)
 	p = arrayget(rich.text, n);
 	cw = stringnwidth(obj->font, p, 1);
 
-	if (cur->x + cw > Dx(rich.page.r)) {
-		cur->x = 0;
-		cur->y += obj->font->height;
-	}
+	if (cur->x + cw > Dx(rich.page.r)) *cur = obj->nextlinept;
 
 	switch (*p) {
 	case '\n':
-		cur->x = 0;
-		cur->y += obj->font->height;
-//		obj->nextlinept.y = cur->y + obj->font->height;
+		*cur = obj->nextlinept;
+		obj->nextlinept.y += obj->font->height;
 		break;
 	case '\t':
 		tab = stringwidth(font, "0") * 4;
@@ -577,25 +576,32 @@ drawobject(Object *obj, Point *cur)
 {
 	long i, n;
 	if ((obj->offset > rich.text->count) || (obj->offset < 0)) {
-		fprint(2, "drawobject: object out of bonds: %ld %ld\n", obj->offset, rich.text->count);
+		fprint(2, "drawobject: object out of bonds: %ld %ld\n",
+		  obj->offset, rich.text->count);
 		return;
+	}
+	obj->startpt = *cur;
+	obj->nextlinept = Pt(0, cur->y + obj->font->height);
+	if ((obj->prev != nil) && (cur->x != 0)) {
+		if (obj->nextlinept.y < obj->prev->nextlinept.y)
+			obj->nextlinept.y = obj->prev->nextlinept.y;
 	}
 	if (obj->next == nil) n = rich.text->count;
 	else n = obj->next->offset;
 	for (i = obj->offset; i < n; i++) {
 		drawchar(obj, i, cur);
 	}
+	obj->endpt = *cur;
 }
 
 void
 newdraw(void)
 {
-	Point cur, nextlinept;
+	Point cur;
 	Object **op;
 	long i;
 
 	cur = ZP;
-	nextlinept = cur;
 	qlock(rich.l);
 	qlock(rich.text->l);
 	for (i = 0; i < rich.objects->count; i++) {

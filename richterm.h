@@ -18,6 +18,7 @@ struct Object {
 	Array *text;
 	long offset;
 	Object *next;
+	Object *prev;
 	Point startpt;
 	Point endpt;
 	Point nextlinept;

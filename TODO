@@ -1,2 +1,1 @@
-Use single buffer array for text.
-Only store pointer offset in objects, so that offset of next obj is treated as end of current obj.
+Retvrn scrolling, selecting, object removal and screen clearing.
