@@ -608,6 +608,7 @@ newdraw(void)
 		op = arrayget(rich.objects, i);
 		drawobject(*op, &cur);
 	}
+	rich.page.max = cur;
 	qunlock(rich.text->l);
 	qunlock(rich.l);
 }
