@@ -554,7 +554,10 @@ drawchar(Object *obj, long n, Point *cur)
 	p = arrayget(rich.text, n);
 	cw = stringnwidth(obj->font, p, 1);
 
-	if (cur->x + cw > Dx(rich.page.r)) *cur = obj->nextlinept;
+	if (cur->x + cw > Dx(rich.page.r)) {
+		*cur = obj->nextlinept;
+		obj->nextlinept.y += obj->font->height;
+	}
 
 	switch (*p) {
 	case '\n':
