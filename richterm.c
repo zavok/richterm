@@ -569,7 +569,11 @@ drawchar(Object *obj, long n, Point *cur)
 		cur->x = (cur->x / tab + 1) * tab;
 		break;
 	default:
-		_drawchar(p, *cur, obj->font, Itext, Inormbg);
+		if ((cur->y >= rich.page.scroll.y) &&
+		  (obj->nextlinept.y <= rich.page.scroll.y + Dy(rich.page.r)))
+		{
+			_drawchar(p, *cur, obj->font, Itext, Inormbg);
+		}
 		cur->x += cw;
 	}
 }
