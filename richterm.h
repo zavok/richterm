@@ -50,6 +50,8 @@ struct Rich {
 	Array *objects;
 	Array *text;
 	u64int idcount;
+	long selmin;
+	long selmax;
 	Page page;
 };
 
