@@ -1,4 +1,5 @@
-void redraw(int);
+extern Channel *redrawc;
+
 void drawscrollbar(void);
 
 typedef struct Object Object;
@@ -25,6 +26,8 @@ struct Object {
 };
 
 extern Object *olast;
+
+void redraw(Object *);
 
 Object * mkobjectftree(Object *, File *);
 void rmobjectftree(Object *);

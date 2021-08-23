@@ -37,7 +37,9 @@ devfs_write(Req *r)
 {
 	File *f;
 	Array *buf;
+	Object *obj;
 	buf = nil;
+	obj = nil;
 	f = r->fid->file;
 	if (f == cons){
 		r->ofcall.count = r->ifcall.count;
@@ -52,7 +54,7 @@ devfs_write(Req *r)
 
 		rich.objects->count--;
 
-		mkobjectftree(
+		obj = mkobjectftree(
 		  newobject(&rich, r->ifcall.data, r->ifcall.count),
 		  fsctl->tree->root);
 
@@ -62,7 +64,7 @@ devfs_write(Req *r)
 			arrayfree(buf);
 		} else olast = newobject(&rich, nil, 0);
 
-		redraw(1);
+		nbsend(redrawc, &obj);
 		respond(r, nil);
 	} else if (f == consctl) {
 		respond(r, "not implemented");

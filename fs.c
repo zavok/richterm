@@ -136,7 +136,7 @@ fs_write(Req *r)
 	} else if (aux != nil) {
 		aux->write(r, aux->data);
 		respond(r, nil);
-		redraw(1);
+		nbsend(redrawc, &aux->obj);
 	} else respond(r, "fs_write: f->aux is nil");
 }
 
