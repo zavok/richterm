@@ -38,6 +38,8 @@ Fsctl *fsctl;
 Array *fonts;
 Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg, *Itext;
 
+char *srvname;
+
 char *mitems[] = {"paste", "snarf", "plumb", nil};
 void (*mfunc[])(Rich *) = {mpaste, msnarf, mplumb, nil};
 
@@ -60,7 +62,7 @@ enum {
 void
 usage(void)
 {
-	fprint(2, "usage: %s [-D] [cmd]\n", argv0);
+	fprint(2, "usage: %s [-D] [-s srvname] [cmd [args]]\n", argv0);
 	exits("usage");
 }
 
@@ -77,13 +79,16 @@ threadmain(int argc, char **argv)
 	case 'D':
 		chatty9p++;
 		break;
+	case 's':
+		srvname = EARGF(usage());
+		break;
 	default:
 		usage();
 	} ARGEND
 
 	mmode = MM_NONE;
 
-	if (initdraw(0, 0, "richterm") < 0)
+	if (initdraw(0, 0, argv0) < 0)
 		sysfatal("%s: %r", argv0);
 	if ((mctl = initmouse(nil, screen)) == nil)
 		sysfatal("%s: %r", argv0);
@@ -126,6 +131,7 @@ threadmain(int argc, char **argv)
 
 	if(rfork(RFENVG) < 0)
 		sysfatal("rfork: %r");
+	quotefmtinstall();
 	atexit(shutdown);
 
 	pidchan = chancreate(sizeof(int), 0);
@@ -139,6 +145,9 @@ threadmain(int argc, char **argv)
 		{kctl->c, &kv, CHANRCV},
 		{nil, nil, CHANEND},
 	};
+
+	threadsetname("main");
+
 	for (;;) {
 		switch(alt(alts)) {
 		case MOUSE:
@@ -472,7 +481,7 @@ runcmd(void *args)
 
 	if ((dctl = initdevfs()) == nil)
 		sysfatal("initdevfs failed: %r");
-	if ((fsctl = initfs()) == nil)
+	if ((fsctl = initfs(srvname)) == nil)
 		sysfatal("initfs failed: %r");
 
 	rfork(RFFDG);

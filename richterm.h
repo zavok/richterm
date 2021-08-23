@@ -79,7 +79,7 @@ struct Fsctl {
 
 extern Fsctl *fsctl;
 
-Fsctl * initfs(void);
+Fsctl * initfs(char *);
 
 typedef struct Faux Faux;
 

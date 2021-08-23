@@ -11,6 +11,34 @@
 File *new, *ctl;
 Object *newobj;
 
+void fs_open(Req *);
+void fs_read(Req *);
+void fs_write(Req *);
+void ftree_destroy(File *);
+
+Fsctl *
+initfs(char *srvname)
+{
+	Fsctl *fsctl;
+	static Srv srv = {
+		.open  = fs_open,
+		.read  = fs_read,
+		.write = fs_write,
+	};
+	newobj = nil;
+	fsctl = mallocz(sizeof(Fsctl), 1);
+	fsctl->c = chancreate(sizeof(int), 0);
+	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, ftree_destroy);
+	if (srv.tree == nil) return nil;
+	fsctl->tree = srv.tree;
+	new = createfile(srv.tree->root, "new", "richterm", 0666, fsctl);
+	if (new == nil) return nil;
+	ctl = createfile(srv.tree->root, "ctl", "richterm", 0666, fsctl);
+	if (ctl == nil) return nil;
+	threadpostmountsrv(&srv, srvname, "/mnt/richterm", MREPL);
+	return fsctl;
+}
+
 char *
 ctlcmd(char *buf)
 {
@@ -110,29 +138,6 @@ fs_write(Req *r)
 		respond(r, nil);
 		redraw(1);
 	} else respond(r, "fs_write: f->aux is nil");
-}
-
-Fsctl *
-initfs(void)
-{
-	Fsctl *fsctl;
-	static Srv srv = {
-		.open  = fs_open,
-		.read  = fs_read,
-		.write = fs_write,
-	};
-	newobj = nil;
-	fsctl = mallocz(sizeof(Fsctl), 1);
-	fsctl->c = chancreate(sizeof(int), 0);
-	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, ftree_destroy);
-	if (srv.tree == nil) return nil;
-	fsctl->tree = srv.tree;
-	new = createfile(srv.tree->root, "new", "richterm", 0666, fsctl);
-	if (new == nil) return nil;
-	ctl = createfile(srv.tree->root, "ctl", "richterm", 0666, fsctl);
-	if (ctl == nil) return nil;
-	threadpostmountsrv(&srv, "richterm", "/mnt/richterm", MREPL);
-	return fsctl;
 }
 
 void
