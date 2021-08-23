@@ -1,5 +1,6 @@
 #include <u.h>
 #include <libc.h>
+#include <plumb.h>
 #include <fcall.h>
 #include <thread.h>
 #include <draw.h>
@@ -297,6 +298,7 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 		if (mv.buttons == 4) {
 			break;
 		}
+		break;
 	case MM_SELECT:
 		if (mv.buttons == (1|2)) {
 			/* cut */
@@ -544,16 +546,53 @@ objectfree(void *v)
 void
 mpaste(Rich *)
 {
+	int fd;
+	long n;
+	char buf[4096], *p;
+	if ((fd = open("/dev/snarf", OREAD)) > 0) {
+		while((n = read(fd, buf, sizeof(buf))) > 0) {
+			p = arraygrow(rich.text, n);
+			memcpy(p, buf, n);
+		}
+		if (n < 0) fprint(2, "mpaste: %r\n");
+		close(fd);
+		redraw(0);
+	}
 }
 
 void
 msnarf(Rich *)
 {
+	int fd;
+	long n;
+	if ((rich.selmin < rich.selmax) &&
+	  ((fd = open("/dev/snarf", OWRITE)) > 0)) {
+		n = write(fd, arrayget(rich.text, rich.selmin),
+		  rich.selmax - rich.selmin);
+		if (n < rich.selmax - rich.selmin) fprint(2, "msnarf: %r\n");
+		close(fd);
+	}
 }
 
 void
 mplumb(Rich *)
 {
+	char buf[1024];
+	int pd;
+	Plumbmsg m;
+	if ((pd = plumbopen("send", OWRITE)) > 0) {
+		m = (Plumbmsg) {
+			"richterm",
+			nil,
+			getwd(buf, sizeof(buf)),
+			"text",
+			nil,
+			rich.selmax - rich.selmin,
+			arrayget(rich.text, rich.selmin)
+		};
+		plumbsend(pd, &m);
+		close(pd);
+	}
 }
 
 int
