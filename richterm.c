@@ -26,11 +26,10 @@ void msnarf(Rich *);
 void mplumb(Rich *);
 void msend(Rich *);
 
-void newdraw(void);
 
 Rich rich;
 int hostpid = -1;
-Channel *pidchan;
+Channel *pidchan, *redrawc;
 Mousectl *mctl;
 Keyboardctl *kctl;
 Devfsctl *dctl;
@@ -73,7 +72,7 @@ threadmain(int argc, char **argv)
 	int rv[2], mmode;
 	Mouse mv;
 	Rune kv;
-	Array *dv;
+	Object *ov;
 
 	ARGBEGIN{
 	case 'D':
@@ -126,8 +125,10 @@ threadmain(int argc, char **argv)
 
 	olast = newobject(&rich, nil, 0);
 
+	redrawc = chancreate(sizeof(Object *), 8);
+
 	resize();
-	redraw(1);
+	nbsend(redrawc, nil);
 
 	if(rfork(RFENVG) < 0)
 		sysfatal("rfork: %r");
@@ -138,10 +139,11 @@ threadmain(int argc, char **argv)
 	proccreate(runcmd, argv, 16 * 1024);
 	hostpid = recvul(pidchan);
 
-	enum {MOUSE, RESIZE, KBD, DEVFSWRITE, NONE};
+	enum {MOUSE, RESIZE, REDRAW, KBD, DEVFSWRITE, NONE};
 	Alt alts[5] = {
 		{mctl->c, &mv, CHANRCV},
 		{mctl->resizec, rv, CHANRCV},
+		{redrawc, &ov, CHANRCV},
 		{kctl->c, &kv, CHANRCV},
 		{nil, nil, CHANEND},
 	};
@@ -157,15 +159,15 @@ threadmain(int argc, char **argv)
 			if (getwindow(display, Refnone) < 0)
 				sysfatal("resize failed: %r");
 			resize();
-			redraw(1);
+			nbsend(redrawc, nil);
+			break;
+		case REDRAW:
+			draw(screen, screen->r, Inormbg, nil, ZP);
+			redraw(ov);
+			drawscrollbar();
+				flushimage(display, 1);
 			break;
 		case KBD:
-			if (kv == 0xf001) {
-				draw(screen, rich.page.r, display->white, nil, ZP);
-				newdraw();
-				flushimage(display, 1);
-				break;
-			}
 			if (kv == 0x7f) shutdown(); /* delete */
 			if (kv == 0xf00e) { /* d-pad up */
 				scroll(
@@ -194,12 +196,15 @@ threadmain(int argc, char **argv)
 			if (kv == 0x08) { /* backspace */
 				/*TODO: should stop at last offset, not 0 */
 				if (rich.text->count > 0) rich.text->count--;
-				redraw(1);
+				nbsend(redrawc, &olast);
 				break;
 			}
 			if (rich.objects->count > 0) {
+				Object *obj;
 				int n;
 				char *p;
+
+				obj = nil;
 				n = runelen(kv);
 
 				qlock(rich.l);
@@ -209,28 +214,28 @@ threadmain(int argc, char **argv)
 
 				qunlock(rich.l);
 
-				redraw(1);
-			}
-			if (kv == '\n') {
-				qlock(rich.l);
+				if (kv == '\n') {
+					Array *dv;
 
-				dv = arraycreate(sizeof(char),
-				  rich.text->count - olast->offset, nil);
-				arraygrow(dv, rich.text->count - olast->offset);
-				memcpy(dv->p,
-				  arrayget(rich.text, olast->offset),
-				  rich.text->count - olast->offset);
+					qlock(rich.l);
+	
+					dv = arraycreate(sizeof(char),
+					  rich.text->count - olast->offset, nil);
+					arraygrow(dv, rich.text->count - olast->offset);
+					memcpy(dv->p,
+					  arrayget(rich.text, olast->offset),
+					  rich.text->count - olast->offset);
 
-				qunlock(rich.l);
+					/* dv is freed on recv end */
 
-				
-				mkobjectftree(olast, fsctl->tree->root);
-				olast = newobject(&rich, nil, 0);
-
-				nbsend(dctl->rc, &dv);
-
-				redraw(1);
-				break;
+					qunlock(rich.l);
+					
+					obj = mkobjectftree(olast, fsctl->tree->root);
+					olast = newobject(&rich, nil, 0);
+	
+					nbsend(dctl->rc, &dv);
+				}
+				nbsend(redrawc, &obj);
 			}
 			break;
 		case NONE:
@@ -295,7 +300,7 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 			selend = selstart;
 			rich.selmin = selstart;
 			rich.selmax = selstart;
-			redraw(0);
+			nbsend(redrawc, nil);
 			*mmode = MM_SELECT;
 		}
 		if (mv.buttons == 2) {
@@ -325,7 +330,7 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 			rich.selmin = selend;
 			rich.selmax = selstart;
 		}
-		redraw(0);
+		nbsend(redrawc, nil);
 	}
 }
 
@@ -358,7 +363,7 @@ scroll(Point p, Rich *r)
 
 	r->page.scroll = p;
 
-	redraw(0);
+	nbsend(redrawc, nil);
 }
 
 Faux *
@@ -438,18 +443,6 @@ mkobjectftree(Object *obj, File *root)
 
 	qunlock(rich.l);
 	return obj;
-}
-
-
-void
-redraw(int)
-{
-	draw(screen, screen->r, Inormbg, nil, ZP);
-	drawscrollbar();
-
-	newdraw();
-
-	flushimage(display, 1);
 }
 
 void
@@ -565,7 +558,7 @@ mpaste(Rich *)
 		}
 		if (n < 0) fprint(2, "mpaste: %r\n");
 		close(fd);
-		redraw(0);
+		nbsend(redrawc, &olast);;
 	}
 }
 
@@ -700,8 +693,10 @@ drawobject(Object *obj, Point *cur)
 }
 
 void
-newdraw(void)
+redraw(Object *)
 {
+	/* TODO: only redraw starting from arg-supplied *obj */
+
 	Point cur;
 	Object **op;
 	long i;
