@@ -195,9 +195,10 @@ threadmain(int argc, char **argv)
 				break;
 			}
 			if (kv == 0x08) { /* backspace */
-				/*TODO: should stop at last offset, not 0 */
-				if (rich.text->count > 0) rich.text->count--;
-				nbsend(redrawc, &olast);
+				if (rich.text->count > olast->offset) {
+					rich.text->count--;
+					nbsend(redrawc, &olast);
+				}
 				break;
 			}
 			if (rich.objects->count > 0) {
