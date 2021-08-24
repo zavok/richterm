@@ -43,8 +43,7 @@ char *
 ctlcmd(char *buf)
 {
 	Object *obj;
-	int n, i, j, k;
-	long ne;
+	int n, i, j;
 	char *args[256];
 	obj = nil;
 	n = tokenize(buf, args, 256);
@@ -172,9 +171,15 @@ arrayread(Req *r, void *v)
 }
 
 void
-arraywrite(Req *, void *)
+arraywrite(Req *r, void *v)
 {
-	/* stub */
+	Array *data;
+	data = v;
+	qlock(rich.l);
+	data->count = 0;
+	arraygrow(data, r->ifcall.count, r->ifcall.data);
+	r->ofcall.count = r->ifcall.count;
+	qunlock(rich.l);
 }
 
 void

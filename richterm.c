@@ -21,12 +21,6 @@ void mouse(Mousectl *, Mouse, int *);
 Object * getobj(Point xy);
 long getsel(Point pt);
 
-void mpaste(Rich *);
-void msnarf(Rich *);
-void mplumb(Rich *);
-void msend(Rich *);
-
-
 Rich rich;
 int hostpid = -1;
 Channel *pidchan, *redrawc;
@@ -39,15 +33,32 @@ Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg, *Itext;
 
 char *srvname;
 
+void mpaste(Rich *);
+void msnarf(Rich *);
+void mplumb(Rich *);
+
 char *mitems[] = {"paste", "snarf", "plumb", nil};
 void (*mfunc[])(Rich *) = {mpaste, msnarf, mplumb, nil};
 
-struct Menu mmenu = {
+Menu mmenu = {
 	.item = mitems,
 	.gen = nil,
 	.lasthit = 0,
 };
 
+void rfollow(Object *);
+void rsnarf(Object *);
+void rplumb(Object *);
+
+char *ritems[] = {"Follow", "Snarf", "Plumb", nil};
+void (*rfunc[])(Object *) = {rfollow, rsnarf, rplumb, nil};
+char * rgen(int);
+
+Menu rmenu = {
+	.item = ritems,
+	.gen = nil,
+	.lasthit = 0,
+};
 
 Object *olast;
 
@@ -302,15 +313,20 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 			rich.selmax = selstart;
 			nbsend(redrawc, nil);
 			*mmode = MM_SELECT;
-		}
-		if (mv.buttons == 2) {
+		} else if (mv.buttons == 2) {
 			int f;
 			f = menuhit(2, mc, &mmenu, nil);
 			if (f >= 0) mfunc[f](&rich);
 			*mmode = MM_NONE;
-		}
-		if (mv.buttons == 4) {
-			break;
+		} else if (mv.buttons == 4) {
+			int f;
+			Object *obj;
+			obj = getobj(mv.xy);
+			if ((obj != nil) && (obj->dlink->count > 0)) {
+				f = menuhit(3, mc, &rmenu, nil);
+				if (f >= 0) rfunc[f](obj);
+			}
+			*mmode = MM_NONE;
 		}
 		break;
 	case MM_SELECT:
@@ -591,12 +607,14 @@ void
 drawchar(Object *obj, long *n, Point *cur)
 {
 	int tabw, cw;
-	Image *bg;
+	Image *bg, *fg;
 	Rune r;
 	char *p;
 
 	bg = ((*n >= rich.selmin) && (*n < rich.selmax)) ?
 		Iselbg : Inormbg;
+
+	fg = (obj->dlink->count > 0) ? Ilink : Itext;
 
 	p = arrayget(rich.text, *n, nil);
 
@@ -634,7 +652,7 @@ drawchar(Object *obj, long *n, Point *cur)
 		break;
 	default:
 		if (objectisvisible(obj))
-			_drawchar(r, *cur, obj->font, Itext, bg);
+			_drawchar(r, *cur, obj->font, fg, bg);
 		cur->x += cw;
 	}
 }
@@ -811,4 +829,53 @@ objsettext(Object *obj, char *data, long count)
 		obj->offset += dn;
 	}
 	qunlock(rich.objects->l);
+}
+
+char *
+rgen(int n)
+{
+	if (n < sizeof (ritems)) return ritems[n];
+	/* TODO:
+	   if n>ritems, return items from /menu file (doesn't exist yet) */
+	return nil;
+}
+
+void
+rfollow(Object *)
+{
+	/* TODO: send link to be read from /ctl file */
+}
+
+void
+rsnarf(Object *obj)
+{
+	int fd;
+	long n;
+	if ((fd = open("/dev/snarf", OWRITE)) > 0) {
+		n = write(fd, arrayget(obj->dlink, 0, nil),
+		  obj->dlink->count);
+		if (n < obj->dlink->count) fprint(2, "rsnarf: %r\n");
+		close(fd);
+	}
+}
+
+void
+rplumb(Object *obj)
+{
+	char buf[1024];
+	int pd;
+	Plumbmsg m;
+	if ((pd = plumbopen("send", OWRITE)) > 0) {
+		m = (Plumbmsg) {
+			"richterm",
+			nil,
+			getwd(buf, sizeof(buf)),
+			"text",
+			nil,
+			obj->dlink->count,
+			arrayget(obj->dlink, 0, nil)
+		};
+		plumbsend(pd, &m);
+		close(pd);
+	}
 }
