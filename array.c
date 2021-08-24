@@ -73,15 +73,24 @@ arraygrow(Array *ap, long n, void *v)
 }
 
 int
-arraydel(Array *ap, long n)
+arraydel(Array *ap, long offset, long count)
 {
-	char *v;
-	if (_arraycheck(ap, n, "arraydel") != 0) return -1;
+	void *v, *ve;
+	long i;
+	if (_arraycheck(ap, offset + count, "arraydel") != 0) return -1;
+
+	if (ap->free != nil) {
+		for (i = offset; i < offset+ count; i++) {
+			v = arrayget(ap, i, nil);
+			ap->free(v);
+		}
+	}
+
+	v = arrayget(ap, offset, nil);
+	ve = arrayget(ap, offset + count, nil);
 	qlock(ap->l);
-	v = ap->p + ap->size * n;
-	if (ap->free != nil) ap->free(v);
-	memcpy(v, v + ap->size, (ap->count - n) * ap->size);
-	ap->count--;
+	memcpy(v, ve, (ap->count - offset - count) * ap->size);
+	ap->count -= count;
 	qunlock(ap->l);
 	return 0;
 }

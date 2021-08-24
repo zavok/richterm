@@ -43,7 +43,8 @@ char *
 ctlcmd(char *buf)
 {
 	Object *obj;
-	int n, i, j;
+	int n, i, j, k;
+	long ne;
 	char *args[256];
 	obj = nil;
 	n = tokenize(buf, args, 256);
@@ -55,22 +56,26 @@ ctlcmd(char *buf)
 				arrayget(rich.objects, j, &obj);
 				if (obj == olast) continue;
 				if (strcmp(obj->id, args[i]) == 0) {
-					// objectfree(obj);
-					arraydel(rich.objects, j);
+					objsettext(obj, nil, 0);
+					rmobjectftree(obj);
+					objectfree(obj);
+					free(obj);
+					arraydel(rich.objects, j, 1);
 					break;
 				}
 			}
 		}
 	} else if (strcmp(args[0], "clear") == 0) {
-		int k;
-		k = rich.objects->count;
-		for (i = 0; i < k; i++) {
-			arrayget(rich.objects, 0, &obj);
-			if (obj != olast) {
-				// objectfree(obj);
-				arraydel(rich.objects, 0);
-			}
+		for (i = 0; i < rich.objects->count; i++) {
+			arrayget(rich.objects, i, &obj);
+			if (obj != olast) rmobjectftree(obj);
+			objectfree(obj);
+			free(obj);
 		}
+		rich.objects->count = 0;
+		rich.text->count = 0;
+		olast = objectcreate();
+		arraygrow(rich.objects, 1, &olast);
 	} else {
 		qunlock(rich.l);
 		return "unknown command";
@@ -104,10 +109,8 @@ fs_open(Req *r)
 		mkobjectftree(newobj, fsctl->tree->root);
 		objinsertbeforelast(newobj);
 
-		/*
-		 * Because our newobj is created empty, there's no need
-		 * to move text from olast around.
-		 */
+		/* Because our newobj is created empty, there's no need
+		   to move text from olast around. */
 	}
 
 	respond(r, nil);
@@ -206,39 +209,26 @@ textwrite(Req *r, void *)
 	/* TODO: this is not exactly finished */
 	/* in particular TRUNK/APPEND handling is needed */
 
-	char *p, *pe;
+	char *buf;
 	Faux *aux;
 	Object *obj;
-	long n, m, dn;
-
-	qlock(rich.objects->l);
+	long n, m, k;
 
 	aux = r->fid->file->aux;
 	obj = aux->obj;
-	p = rich.text->p + obj->offset;
-	pe = rich.text->p + rich.text->count;
-	if (obj->next == nil) n = rich.text->count;
-	else n = obj->next->offset - obj->offset;
-	m = r->ifcall.count + r->ifcall.offset;
-	dn = m - n;
 
-	if (dn > 0) arraygrow(rich.text, dn, nil);
-	else rich.text->count += dn;
+	n = r->ifcall.offset + r->ifcall.count;
+	m = objtextlen(obj);
+	k = (n > m) ? n : m;
+	buf = malloc(sizeof(char) * k);
 	
-	qlock(rich.text->l);
+	qlock(rich.l);
+	memcpy(buf, arrayget(rich.text, obj->offset, nil), m);
+	memcpy(buf + r->ifcall.offset, r->ifcall.data, r->ifcall.count);
+	objsettext(obj, buf, k);
+	qunlock(rich.l);
 
-	memcpy(p + m, p + n,  pe - p);
-	memcpy(p + r->ifcall.offset, r->ifcall.data,
-	  r->ifcall.count);
-
-	qunlock(rich.text->l);
-
-	for (obj = obj->next; obj != nil; obj = obj->next) {
-		obj->offset += dn;
-	}
-
-	qunlock(rich.objects->l);
-
+	free(buf);
 }
 
 void

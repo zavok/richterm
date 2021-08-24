@@ -389,27 +389,37 @@ objectcreate(void)
 void
 objectfree(Object *obj)
 {
-	/* TODO: following should be in separate function rmobjectftree
+	arrayfree(obj->dlink);
+	arrayfree(obj->dimage);
+}
+
+void
+rmobjectftree(Object *obj)
+{
+	free(obj->ftext->aux);
+	free(obj->ffont->aux);
+	free(obj->flink->aux);
+	free(obj->fimage->aux);
+
+	obj->ftext->aux = nil;
+	obj->ffont->aux = nil;
+	obj->flink->aux = nil;
+	obj->fimage->aux = nil;
 
 	removefile(obj->ftext);
 	removefile(obj->ffont);
 	removefile(obj->flink);
 	removefile(obj->fimage);
+
 	removefile(obj->dir);
 
-	free(obj->id); */
-
-	/* TODO: why is this not working? */
-	arrayfree(obj->dlink);
-	arrayfree(obj->dimage);
+	free(obj->id);
 }
 
 Object *
 mkobjectftree(Object *obj, File *root)
 {
 	Faux *auxtext, *auxfont, *auxlink, *auximage;
-
-	qlock(rich.l);
 
 	obj->id = smprint("%ulld", ++rich.idcount);
 
@@ -430,8 +440,6 @@ mkobjectftree(Object *obj, File *root)
 	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666, auxfont);
 	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666, auxlink);
 	obj->fimage = createfile(obj->dir, "image", "richterm", 0666, auximage);
-
-	qunlock(rich.l);
 
 	return obj;
 }
@@ -766,4 +774,41 @@ objinsertbeforelast(Object *obj)
 	if (olast->prev != nil) olast->prev->next = obj;
 	olast->prev = obj;
 	qunlock(rich.l);
+}
+
+long
+objtextlen(Object *obj)
+{
+	long n;
+	n = (obj->next == nil) ? rich.text->count : obj->next->offset;
+	return n - obj->offset;
+}
+
+void
+objsettext(Object *obj, char *data, long count)
+{
+	long n, m, dn;
+	char *p, *pe;
+
+	p = arrayget(rich.text, obj->offset, nil);
+	pe = arrayend(rich.text);
+	
+	n = objtextlen(obj);
+	m = count;
+	dn = m - n;
+
+	if (dn > 0) arraygrow(rich.text, dn, nil);
+	else rich.text->count += dn;
+
+	qlock(rich.text->l);
+	if (p != nil) memcpy(p + m, p + n,  pe - p);
+	else p = pe;
+	memcpy(p, data, count);
+	qunlock(rich.text->l);
+
+	qlock(rich.objects->l);
+	for (obj = obj->next; obj != nil; obj = obj->next) {
+		obj->offset += dn;
+	}
+	qunlock(rich.objects->l);
 }

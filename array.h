@@ -10,7 +10,7 @@ struct Array {
 };
 
 Array * arraycreate(long size, long n, void (*free)(void *));
-int arraydel(Array *, long);
+int arraydel(Array *, long, long);
 void arrayfree(Array *);
 void * arraygrow(Array *, long, void *);
 void * arrayget(Array *, long, void *);

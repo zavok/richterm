@@ -36,6 +36,8 @@ Object * mkobjectftree(Object *, File *);
 void objinsertbeforelast(Object *);
 void rmobjectftree(Object *);
 void objectfree(Object *);
+long objtextlen(Object *obj);
+void objsettext(Object *, char *, long);
 
 extern Array *fonts;
 
