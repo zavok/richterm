@@ -9,9 +9,10 @@ struct Array {
 	void (*free)(void *);
 };
 
-Array * arraycreate(long, long, void (*free)(void *));
-void arrayfree(Array *);
-void * arraygrow(Array *, long);
+Array * arraycreate(long size, long n, void (*free)(void *));
 int arraydel(Array *, long);
-void * arrayget(Array *, long);
+void arrayfree(Array *);
+void * arraygrow(Array *, long, void *);
+void * arrayget(Array *, long, void *);
 void * arrayend(Array *);
+void * arrayinsert(Array *, long, long, void *);
