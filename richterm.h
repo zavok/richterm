@@ -11,15 +11,17 @@ struct Object {
 	File *flink;
 	File *fimage;
 	char *id;
+
 	Array *dlink;
 	Array *dimage;
 	Font *font;
 	Image *image;
 
-	Array *text;
 	long offset;
+
 	Object *next;
 	Object *prev;
+
 	Point startpt;
 	Point endpt;
 	Point nextlinept;
@@ -29,9 +31,11 @@ extern Object *olast;
 
 void redraw(Object *);
 
+Object * objectcreate(void);
 Object * mkobjectftree(Object *, File *);
+void objinsertbeforelast(Object *);
 void rmobjectftree(Object *);
-void objectfree(void *);
+void objectfree(Object *);
 
 extern Array *fonts;
 
@@ -62,7 +66,6 @@ extern Rich rich;
 
 void drawpage(Image *, Rich *);
 void generatepage(Rich *, long);
-Object * newobject(Rich *, char *, long);
 
 typedef struct Devfsctl Devfsctl;
 

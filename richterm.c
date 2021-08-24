@@ -68,7 +68,6 @@ usage(void)
 void
 threadmain(int argc, char **argv)
 {
-	Font **fp;
 	int rv[2], mmode;
 	Mouse mv;
 	Rune kv;
@@ -106,15 +105,17 @@ threadmain(int argc, char **argv)
 	Itext = display->black;
 
 	fonts = arraycreate(sizeof(Font *), 2, nil);
-	fp = arraygrow(fonts, 1);
-	*fp = font;
+	arraygrow(fonts, 1, &font);
 
 	rich.l = mallocz(sizeof(QLock), 1);
 
 	qlock(rich.l);
 
-	rich.objects = arraycreate(sizeof(Object *), 8, nil);
 	rich.text = arraycreate(sizeof(char), 4096, nil);
+	rich.objects = arraycreate(sizeof(Object *), 8, nil);
+
+	olast = objectcreate();
+	arraygrow(rich.objects, 1, &olast);
 
 	rich.page.scroll = ZP;
 
@@ -123,12 +124,12 @@ threadmain(int argc, char **argv)
 
 	qunlock(rich.l);
 
-	olast = newobject(&rich, nil, 0);
-
 	redrawc = chancreate(sizeof(Object *), 8);
 
 	resize();
-	nbsend(redrawc, nil);
+	draw(screen, screen->r, Inormbg, nil, ZP);
+	drawscrollbar();
+	flushimage(display, 1);
 
 	if(rfork(RFENVG) < 0)
 		sysfatal("rfork: %r");
@@ -139,7 +140,7 @@ threadmain(int argc, char **argv)
 	proccreate(runcmd, argv, 16 * 1024);
 	hostpid = recvul(pidchan);
 
-	enum {MOUSE, RESIZE, REDRAW, KBD, DEVFSWRITE, NONE};
+	enum {MOUSE, RESIZE, REDRAW, KBD, NONE};
 	Alt alts[5] = {
 		{mctl->c, &mv, CHANRCV},
 		{mctl->resizec, rv, CHANRCV},
@@ -165,7 +166,7 @@ threadmain(int argc, char **argv)
 			draw(screen, screen->r, Inormbg, nil, ZP);
 			redraw(ov);
 			drawscrollbar();
-				flushimage(display, 1);
+			flushimage(display, 1);
 			break;
 		case KBD:
 			if (kv == 0x7f) shutdown(); /* delete */
@@ -202,15 +203,13 @@ threadmain(int argc, char **argv)
 			if (rich.objects->count > 0) {
 				Object *obj;
 				int n;
-				char *p;
 
 				obj = nil;
 				n = runelen(kv);
 
 				qlock(rich.l);
 
-				p = arraygrow(rich.text, n);
-				runetochar(p, &kv);
+				arraygrow(rich.text, n, &kv);
 
 				qunlock(rich.l);
 
@@ -221,19 +220,19 @@ threadmain(int argc, char **argv)
 	
 					dv = arraycreate(sizeof(char),
 					  rich.text->count - olast->offset, nil);
-					arraygrow(dv, rich.text->count - olast->offset);
-					memcpy(dv->p,
-					  arrayget(rich.text, olast->offset),
-					  rich.text->count - olast->offset);
+					arraygrow(dv, rich.text->count - olast->offset,
+					  arrayget(rich.text, olast->offset, nil));
+
+					nbsend(dctl->rc, &dv);
 
 					/* dv is freed on recv end */
 
 					qunlock(rich.l);
 					
-					obj = mkobjectftree(olast, fsctl->tree->root);
-					olast = newobject(&rich, nil, 0);
-	
-					nbsend(dctl->rc, &dv);
+					obj = objectcreate();
+					mkobjectftree(obj, fsctl->tree->root);
+					objinsertbeforelast(obj);
+					olast->offset = rich.text->count;
 				}
 				nbsend(redrawc, &obj);
 			}
@@ -338,17 +337,16 @@ Font *
 getfont(Array *fonts, char *name)
 {
 	int i;
-	Font *newfont, **fp;
+	Font *newfont, *fnt;
 	for (i = 0; i < fonts->count; i++){
-		fp = arrayget(fonts, i);
-		if (strcmp((*fp)->name, name) == 0) return *fp;
+		arrayget(fonts, i, &fnt);
+		if (strcmp(fnt->name, name) == 0) return fnt;
 	}
 	if ((newfont = openfont(display, name)) == nil) {
 		fprint(2, "%r\n");
 		newfont = font;
 	} else {
-		fp = arraygrow(fonts, 1);
-		*fp = newfont;
+		arraygrow(fonts, 1, &newfont);
 	}
 	return newfont;
 }
@@ -376,42 +374,33 @@ fauxalloc(Object *obj, Array *data, int type)
 }
 
 Object *
-newobject(Rich *rich, char *p, long n)
+objectcreate(void)
 {
-	Object *obj, **op, **old;
-	qlock(rich->l);
-
-	old = (rich->objects->count > 0) ?
-	  arrayget(rich->objects, rich->objects->count - 1) : nil;
-
-	op = arraygrow(rich->objects, 1);
-
+	Object *obj;
 	obj = mallocz(sizeof(Object), 1);
 
-	*op = obj;
-
-	if ((old != nil) && (*old != nil)) {
-		(*old)->next = obj;
-		obj->prev = *old;
-	}
-
-	obj->offset = rich->text->count;
-
 	obj->font = font;
-	obj->text = rich->text;
-
 	obj->dlink = arraycreate(sizeof(char), 4096, nil);
 	obj->dimage = arraycreate(sizeof(char), 4096, nil);
-
-	if (p != nil) {
-		char *pp;
-
-		pp = arraygrow(rich->text, n);
-		memcpy(pp, p, n);
-	};
-
-	qunlock(rich->l);
 	return obj;
+}
+
+void
+objectfree(Object *obj)
+{
+	/* TODO: following should be in separate function rmobjectftree
+
+	removefile(obj->ftext);
+	removefile(obj->ffont);
+	removefile(obj->flink);
+	removefile(obj->fimage);
+	removefile(obj->dir);
+
+	free(obj->id); */
+
+	/* TODO: why is this not working? */
+	arrayfree(obj->dlink);
+	arrayfree(obj->dimage);
 }
 
 Object *
@@ -442,6 +431,7 @@ mkobjectftree(Object *obj, File *root)
 	obj->fimage = createfile(obj->dir, "image", "richterm", 0666, auximage);
 
 	qunlock(rich.l);
+
 	return obj;
 }
 
@@ -523,42 +513,18 @@ resize(void)
 }
 
 void
-objectfree(void *v)
-{
-	Object *op;
-	op = v;
-
-	removefile(op->ftext);
-	removefile(op->ffont);
-	removefile(op->flink);
-	removefile(op->fimage);
-	removefile(op->dir);
-
-	/* TODO: why is this not working? */
-	free(op->id);
-
-//	free(op->dtext->p);
-//	free(op->dfont->p);
-//	free(op->dlink->p);
-//	free(op->dimage->p);
-
-	free(op);
-}
-
-void
 mpaste(Rich *)
 {
 	int fd;
 	long n;
-	char buf[4096], *p;
+	char buf[4096];
 	if ((fd = open("/dev/snarf", OREAD)) > 0) {
 		while((n = read(fd, buf, sizeof(buf))) > 0) {
-			p = arraygrow(rich.text, n);
-			memcpy(p, buf, n);
+			arraygrow(rich.text, n, buf);
 		}
 		if (n < 0) fprint(2, "mpaste: %r\n");
 		close(fd);
-		nbsend(redrawc, &olast);;
+		nbsend(redrawc, &olast);
 	}
 }
 
@@ -569,7 +535,7 @@ msnarf(Rich *)
 	long n;
 	if ((rich.selmin < rich.selmax) &&
 	  ((fd = open("/dev/snarf", OWRITE)) > 0)) {
-		n = write(fd, arrayget(rich.text, rich.selmin),
+		n = write(fd, arrayget(rich.text, rich.selmin, nil),
 		  rich.selmax - rich.selmin);
 		if (n < rich.selmax - rich.selmin) fprint(2, "msnarf: %r\n");
 		close(fd);
@@ -590,7 +556,7 @@ mplumb(Rich *)
 			"text",
 			nil,
 			rich.selmax - rich.selmin,
-			arrayget(rich.text, rich.selmin)
+			arrayget(rich.text, rich.selmin, nil)
 		};
 		plumbsend(pd, &m);
 		close(pd);
@@ -623,7 +589,7 @@ drawchar(Object *obj, long *n, Point *cur)
 	bg = ((*n >= rich.selmin) && (*n < rich.selmax)) ?
 		Iselbg : Inormbg;
 
-	p = arrayget(rich.text, *n);
+	p = arrayget(rich.text, *n, nil);
 
 	if (p == nil) return;
 
@@ -679,13 +645,16 @@ drawobject(Object *obj, Point *cur)
 	}
 
 	obj->startpt = *cur;
+
 	obj->nextlinept = Pt(0, cur->y + obj->font->height);
 	if ((obj->prev != nil) && (cur->x != 0)) {
 		if (obj->nextlinept.y < obj->prev->nextlinept.y)
 			obj->nextlinept.y = obj->prev->nextlinept.y;
 	}
+
 	if (obj->next == nil) n = rich.text->count;
 	else n = obj->next->offset;
+
 	for (i = obj->offset; i < n;) {
 		drawchar(obj, &i, cur);
 	}
@@ -696,20 +665,22 @@ void
 redraw(Object *)
 {
 	/* TODO: only redraw starting from arg-supplied *obj */
+	/* TODO: flush all messages in redrawc channel before proceeding */
 
 	Point cur;
-	Object **op;
+	Object *obj;
 	long i;
 
+	obj = nil;
 	cur = ZP;
 	qlock(rich.l);
-	qlock(rich.text->l);
+
 	for (i = 0; i < rich.objects->count; i++) {
-		op = arrayget(rich.objects, i);
-		drawobject(*op, &cur);
+		if (arrayget(rich.objects, i, &obj) == nil)
+			sysfatal("redraw: %r");
+		drawobject(obj, &cur);
 	}
 	rich.page.max = cur;
-	qunlock(rich.text->l);
 	qunlock(rich.l);
 }
 
@@ -717,12 +688,11 @@ Object *
 getobj(Point xy)
 {
 	long i;
-	Object **op, *obj;
+	Object *obj;
 	Point prevlinept;
 	xy = subpt(xy, subpt(rich.page.r.min, rich.page.scroll));
 	for (i = 0; i < rich.objects->count; i++) {
-		op = arrayget(rich.objects, i);
-		obj = *op;
+		arrayget(rich.objects, i, &obj);
 		prevlinept = ( obj->prev == nil) ? ZP : obj->prev->nextlinept;
 
 		if (((obj->startpt.y == obj->endpt.y) &&
@@ -782,4 +752,17 @@ getsel(Point xy)
 			break;
 	}
 	return li;
+}
+
+void
+objinsertbeforelast(Object *obj)
+{
+	qlock(rich.l);
+	obj->offset = olast->offset;
+	arrayinsert(rich.objects, rich.objects->count - 1, 1, &obj);
+	obj->next = olast;
+	obj->prev = olast->prev;
+	if (olast->prev != nil) olast->prev->next = obj;
+	olast->prev = obj;
+	qunlock(rich.l);
 }

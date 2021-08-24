@@ -36,33 +36,22 @@ void
 devfs_write(Req *r)
 {
 	File *f;
-	Array *buf;
-	Object *obj;
-	buf = nil;
-	obj = nil;
 	f = r->fid->file;
 	if (f == cons){
+		Object *obj;
 		r->ofcall.count = r->ifcall.count;
-		
-		if (rich.text->count - olast->offset > 0) {
-			buf = arraycreate(sizeof(char),
-			  rich.text->count - olast->offset, nil);
 
-			memcpy(buf->p, arrayget(rich.text, olast->offset),
-			  rich.text->count - olast->offset);
-		}
+		obj = objectcreate();
+		mkobjectftree(obj, fsctl->tree->root);
+		objinsertbeforelast(obj);
 
-		rich.objects->count--;
+//print("%ld -> ", olast->offset);
 
-		obj = mkobjectftree(
-		  newobject(&rich, r->ifcall.data, r->ifcall.count),
-		  fsctl->tree->root);
+		arrayinsert(rich.text, olast->offset, r->ifcall.count, r->ifcall.data);
+		olast->offset += r->ifcall.count;
 
-		/* TODO: free olast */
-		if (buf != nil) {
-			olast = newobject(&rich, buf->p, buf->count);
-			arrayfree(buf);
-		} else olast = newobject(&rich, nil, 0);
+//print("%ld\n", olast->offset);
+
 
 		nbsend(redrawc, &obj);
 		respond(r, nil);

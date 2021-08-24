@@ -3,10 +3,6 @@
 - object removal
 - screen clearing.
 
-# find and fix memory locks
-
-there's one related to spawning many new objects
-
 # images
 
 draw them
@@ -14,3 +10,7 @@ draw them
 # links
 
 highlight them and add 3-button menu for interacting with them
+
+# catch ghost new file creation events
+
+probably related to new file being read by ls?

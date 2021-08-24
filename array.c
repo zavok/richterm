@@ -56,13 +56,15 @@ arraygrow(Array *ap, long n, void *v)
 	}
 	ve = arrayend(ap);
 	qlock(ap->l);
+
 	ap->count += n;
 	if (ap->count > ap->n) {
 		ap->n += ap->n;
 		if (ap->count > ap->n) ap->n = ap->count;
 		ap->p = realloc(ap->p, ap->size * ap->n);
 	}
-	memset(ve, 0, ap->size * ap->n);
+
+	memset(ve, 0, n * ap->size);
 	if (v != nil) {
 		memcpy(ve, v, n * ap->size);
 	}

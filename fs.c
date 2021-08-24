@@ -42,19 +42,20 @@ initfs(char *srvname)
 char *
 ctlcmd(char *buf)
 {
-	Object **op;
+	Object *obj;
 	int n, i, j;
 	char *args[256];
+	obj = nil;
 	n = tokenize(buf, args, 256);
 	if (n <= 0) return "expected a command";
 	qlock(rich.l);
 	if (strcmp(args[0], "remove") == 0) {
 		for (i = 1; i < n; i++) {
 			for (j = 0; j < rich.objects->count; j++) {
-				op = arrayget(rich.objects, j);
-				if (*op == olast) continue;
-				if (strcmp((*op)->id, args[i]) == 0) {
-					objectfree(*op);
+				arrayget(rich.objects, j, &obj);
+				if (obj == olast) continue;
+				if (strcmp(obj->id, args[i]) == 0) {
+					// objectfree(obj);
 					arraydel(rich.objects, j);
 					break;
 				}
@@ -64,9 +65,9 @@ ctlcmd(char *buf)
 		int k;
 		k = rich.objects->count;
 		for (i = 0; i < k; i++) {
-			op = arrayget(rich.objects, 0);
-			if (*op != olast) {
-				objectfree(*op);
+			arrayget(rich.objects, 0, &obj);
+			if (obj != olast) {
+				// objectfree(obj);
 				arraydel(rich.objects, 0);
 			}
 		}
@@ -91,11 +92,23 @@ ftree_destroy(File *f)
 
 void
 fs_open(Req *r)
-{	
+{
 	Fsctl *fsctl;
+
 	fsctl = new->aux;
-	newobj = mkobjectftree(newobject(&rich, nil, 0), fsctl->tree->root);
+
+
+	newobj = objectcreate();
+	mkobjectftree(newobj, fsctl->tree->root);
+	objinsertbeforelast(newobj);
+
+	/*
+	 * Because our newobj is created empty, there's no need
+	 * to move text from olast around.
+	 */
+
 	respond(r, nil);
+
 }
 
 void
@@ -174,7 +187,7 @@ textread(Req *r, void *)
 	if (oe == nil) n = rich.text->count;
 	else n = oe->offset;
 	
-	s = arrayget(rich.text, obj->offset);
+	s = arrayget(rich.text, obj->offset, nil);
 	
 	qlock(rich.text->l);
 
@@ -206,7 +219,7 @@ textwrite(Req *r, void *)
 	m = r->ifcall.count + r->ifcall.offset;
 	dn = m - n;
 
-	if (dn > 0) arraygrow(rich.text, dn);
+	if (dn > 0) arraygrow(rich.text, dn, nil);
 	else rich.text->count += dn;
 	
 	qlock(rich.text->l);
