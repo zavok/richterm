@@ -94,18 +94,21 @@ void
 fs_open(Req *r)
 {
 	Fsctl *fsctl;
+	File *f;
 
 	fsctl = new->aux;
+	f = r->fid->file;
 
+	if (f == new) {
+		newobj = objectcreate();
+		mkobjectftree(newobj, fsctl->tree->root);
+		objinsertbeforelast(newobj);
 
-	newobj = objectcreate();
-	mkobjectftree(newobj, fsctl->tree->root);
-	objinsertbeforelast(newobj);
-
-	/*
-	 * Because our newobj is created empty, there's no need
-	 * to move text from olast around.
-	 */
+		/*
+		 * Because our newobj is created empty, there's no need
+		 * to move text from olast around.
+		 */
+	}
 
 	respond(r, nil);
 
