@@ -56,7 +56,7 @@ arraygrow(Array *ap, long n, void *v)
 {
 	assert(ap->magic == MAGIC);
 
-	void *ve;
+	char *ve;
 	if (n < 0) {
 		werrstr("arraygrow: negative growth size");
 		return nil;
@@ -68,21 +68,19 @@ arraygrow(Array *ap, long n, void *v)
 	qlock(ap->l);
 
 	ap->count += n;
-	if (ap->count > ap->n) {
-		ap->n += ap->n;
-		if (ap->count > ap->n)
-			ap->n = ap->count;
+	if (ap->count >= ap->n) {
+		ap->n = 2 * ap->count;
 		ap->p = realloc(ap->p, ap->size * ap->n);
 	}
 
-	ve = (void *)(ap->p + ap->size * (ap->count - n));
+	ve = ap->p + ap->size * (ap->count - n);
 
 	memset(ve, 0, n * ap->size);
 	if (v != nil) {
 		memcpy(ve, v, n * ap->size);
 	}
 	qunlock(ap->l);
-	return ve;
+	return (void *)ve;
 }
 
 int

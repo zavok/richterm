@@ -819,9 +819,6 @@ objsettext(Object *obj, char *data, long count)
 	long n, m, dn;
 	char *p, *pe;
 
-	p = arrayget(rich.text, obj->offset, nil);
-	pe = arrayend(rich.text);
-	
 	n = objtextlen(obj);
 	m = count;
 	dn = m - n;
@@ -829,13 +826,14 @@ objsettext(Object *obj, char *data, long count)
 	if (dn > 0) arraygrow(rich.text, dn, nil);
 	else rich.text->count += dn;
 
+	p = arrayget(rich.text, obj->offset, nil);
+	pe = arrayget(rich.text, rich.text->count - dn, nil);
+
 	qlock(rich.text->l);
 	if (p != nil) memcpy(p + m, p + n,  pe - p);
 	else p = pe;
 	memcpy(p, data, count);
 	qunlock(rich.text->l);
-
-	assert(rich.objects->magic == 0x1234);
 
 	qlock(rich.objects->l);
 	for (obj = obj->next; obj != nil; obj = obj->next) {
