@@ -23,7 +23,7 @@ long getsel(Point pt);
 
 Rich rich;
 int hostpid = -1;
-Channel *pidchan, *redrawc;
+Channel *pidchan, *redrawc, *insertc;
 Mousectl *mctl;
 Keyboardctl *kctl;
 Devfsctl *dctl;
@@ -82,7 +82,8 @@ threadmain(int argc, char **argv)
 	int rv[2], mmode;
 	Mouse mv;
 	Rune kv;
-	Object *ov;
+	Object *ov, *obj;
+	Array *av;
 
 	ARGBEGIN{
 	case 'D':
@@ -136,6 +137,7 @@ threadmain(int argc, char **argv)
 	qunlock(rich.l);
 
 	redrawc = chancreate(sizeof(Object *), 8);
+	insertc = chancreate(sizeof(Array *), 8);
 
 	resize();
 	draw(screen, screen->r, Inormbg, nil, ZP);
@@ -151,11 +153,12 @@ threadmain(int argc, char **argv)
 	proccreate(runcmd, argv, 16 * 1024);
 	hostpid = recvul(pidchan);
 
-	enum {MOUSE, RESIZE, REDRAW, KBD, NONE};
-	Alt alts[5] = {
+	enum {MOUSE, RESIZE, REDRAW, INSERT, KBD, AEND};
+	Alt alts[AEND + 1] = {
 		{mctl->c, &mv, CHANRCV},
 		{mctl->resizec, rv, CHANRCV},
 		{redrawc, &ov, CHANRCV},
+		{insertc, &av, CHANRCV},
 		{kctl->c, &kv, CHANRCV},
 		{nil, nil, CHANEND},
 	};
@@ -178,6 +181,14 @@ threadmain(int argc, char **argv)
 			redraw(ov);
 			drawscrollbar();
 			flushimage(display, 1);
+			break;
+		case INSERT:
+			obj = objectcreate();
+			mkobjectftree(obj, fsctl->tree->root);
+			objinsertbeforelast(obj);
+			objsettext(obj, arrayget(av, 0, nil), av->count);
+			arrayfree(av);
+			nbsend(redrawc, &obj);
 			break;
 		case KBD:
 			if (kv == 0x7f) shutdown(); /* delete */
@@ -249,7 +260,7 @@ threadmain(int argc, char **argv)
 				nbsend(redrawc, &obj);
 			}
 			break;
-		case NONE:
+		case AEND:
 			break;
 		}
 	}
@@ -823,6 +834,8 @@ objsettext(Object *obj, char *data, long count)
 	else p = pe;
 	memcpy(p, data, count);
 	qunlock(rich.text->l);
+
+	assert(rich.objects->magic == 0x1234);
 
 	qlock(rich.objects->l);
 	for (obj = obj->next; obj != nil; obj = obj->next) {

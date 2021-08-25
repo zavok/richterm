@@ -3,6 +3,8 @@
 
 #include "array.h"
 
+#define MAGIC 0x1234
+
 int
 _arraycheck(Array *ap, long n, char *s)
 {
@@ -19,6 +21,7 @@ arraycreate(long size, long n, void (*free)(void *))
 	Array *ap;
 	ap = mallocz(sizeof(Array), 1);
 	*ap = (Array) {
+		MAGIC,
 		mallocz(sizeof(QLock), 1),
 		size,
 		n,
@@ -32,6 +35,8 @@ arraycreate(long size, long n, void (*free)(void *))
 void 
 arrayfree(Array *ap)
 {
+	assert(ap->magic == MAGIC);
+
 	long i;
 	qlock(ap->l);
 	if (ap->free != nil) {
@@ -49,32 +54,42 @@ arrayfree(Array *ap)
 void * 
 arraygrow(Array *ap, long n, void *v)
 {
+	assert(ap->magic == MAGIC);
+
 	void *ve;
 	if (n < 0) {
 		werrstr("arraygrow: negative growth size");
 		return nil;
 	}
-	ve = arrayend(ap);
+	if (n == 0) {
+		werrstr("arraygrow: zero growth size");
+		return nil;
+	}
 	qlock(ap->l);
 
 	ap->count += n;
 	if (ap->count > ap->n) {
 		ap->n += ap->n;
-		if (ap->count > ap->n) ap->n = ap->count;
+		if (ap->count > ap->n)
+			ap->n = ap->count;
 		ap->p = realloc(ap->p, ap->size * ap->n);
 	}
+
+	ve = (void *)(ap->p + ap->size * (ap->count - n));
 
 	memset(ve, 0, n * ap->size);
 	if (v != nil) {
 		memcpy(ve, v, n * ap->size);
 	}
 	qunlock(ap->l);
-	return (void *)(ap->p + ap->size * (ap->count - n));
+	return ve;
 }
 
 int
 arraydel(Array *ap, long offset, long count)
 {
+	assert(ap->magic == MAGIC);
+
 	void *v, *ve;
 	long i;
 	if (_arraycheck(ap, offset + count, "arraydel") != 0) return -1;
@@ -98,6 +113,8 @@ arraydel(Array *ap, long offset, long count)
 void * 
 arrayget(Array *ap, long n, void *v)
 {
+	assert(ap->magic == MAGIC);
+
 	if (_arraycheck(ap, n, "arrayget") != 0) return nil;
 	qlock(ap->l);
 	if (v != nil) {
@@ -110,19 +127,26 @@ arrayget(Array *ap, long n, void *v)
 void *
 arrayend(Array *ap)
 {
+	assert(ap->magic == MAGIC);
+
 	return (void *)(ap->p + ap->size * ap->count);
 }
 
 void *
 arrayinsert(Array *ap, long n, long m, void *v)
 {
+	assert(ap->magic == MAGIC);
+
 	void *vs, *vn;
 	if (n == ap->count) {
 		vs = arraygrow(ap, m, v);
 		return vs;
 	}
 	if (_arraycheck(ap, n, "arrayinsert") != 0) return nil;
-	arraygrow(ap, m, nil);
+	if (arraygrow(ap, m, nil) == nil) {
+		werrstr("arrayinsert: %r");
+		return nil;
+	}
 	vs = arrayget(ap, n, nil);
 	vn = arrayget(ap, n + m, nil);
 	qlock(ap->l);

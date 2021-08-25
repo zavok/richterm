@@ -1,4 +1,5 @@
 extern Channel *redrawc;
+extern Channel *insertc;
 
 void drawscrollbar(void);
 
