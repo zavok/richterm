@@ -11,13 +11,24 @@
 File *new, *ctl, *text, *cons, *consctl;
 Object *newobj;
 File *fsroot;
-Channel *consc;
-Array *consbuf;
+Channel *consc, *ctlc;
+Array *consbuf, *ctlbuf;
 
 void fs_open(Req *);
 void fs_read(Req *);
 void fs_write(Req *);
 void ftree_destroy(File *);
+char * textread(Req *);
+char * textwrite(Req *);
+char * arrayread(Req *);
+char * arraywrite(Req *);
+char * fontread(Req *);
+char * fontwrite(Req *);
+char * consread(Req *);
+char * conswrite(Req *);
+char * ctlread(Req *);
+char * ctlwrite(Req *);
+char * newread(Req *);
 
 int
 initfs(char *srvname)
@@ -30,10 +41,12 @@ initfs(char *srvname)
 	newobj = nil;
 	consbuf = nil;
 	consc = chancreate(sizeof(Array *), 1024);
-	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, ftree_destroy);
+	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	fsroot = srv.tree->root;
-	new = createfile(fsroot, "new", "richterm", 0666, nil);
-	ctl = createfile(fsroot, "ctl", "richterm", 0666, nil);
+	new = createfile(fsroot, "new", "richterm", 0444, 
+		fauxalloc(nil, nil, newread, nil));
+	ctl = createfile(fsroot, "ctl", "richterm", 0666, 
+		fauxalloc(nil, nil, ctlread, ctlwrite));
 	text = createfile(fsroot, "text", "richterm", 0444, 
 		fauxalloc(nil, rich.text, arrayread, nil));
 	cons = createfile(fsroot, "cons", "richterm", 0666, 
@@ -42,6 +55,46 @@ initfs(char *srvname)
 		fauxalloc(nil, nil, nil, nil));
 	threadpostmountsrv(&srv, srvname, "/mnt/richterm", MREPL);
 	return 0;
+}
+
+void
+rmobjectftree(Object *obj)
+{
+	free(obj->ftext->aux);
+	free(obj->ffont->aux);
+	free(obj->flink->aux);
+	free(obj->fimage->aux);
+
+	removefile(obj->ftext);
+	removefile(obj->ffont);
+	removefile(obj->flink);
+	removefile(obj->fimage);
+
+	removefile(obj->dir);
+
+	free(obj->id);
+}
+
+Object *
+mkobjectftree(Object *obj, File *root)
+{
+	obj->id = smprint("%ulld", ++rich.idcount);
+
+	obj->dir = createfile(root, obj->id, "richterm", DMDIR|0555, nil);
+
+	obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666,
+	  fauxalloc(obj, nil, textread, textwrite));
+
+	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666,
+	  fauxalloc(obj, nil, fontread, fontwrite));
+
+	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666,
+	  fauxalloc(obj, obj->dlink, arrayread, arraywrite));
+
+	obj->fimage = createfile(obj->dir, "image", "richterm", 0666,
+	  fauxalloc(obj, obj->dimage, arrayread, arraywrite));
+
+	return obj;
 }
 
 char *
@@ -89,17 +142,6 @@ ctlcmd(char *buf)
 }
 
 void
-ftree_destroy(File *f)
-{
-	Faux *aux;
-	if (f->aux == nil) return;
-	aux = f->aux;
-	free(aux->data->p);
-	free(aux->data);
-	free(aux);
-}
-
-void
 fs_open(Req *r)
 {
 	if (r->fid->file == new) {
@@ -116,52 +158,33 @@ fs_open(Req *r)
 void
 fs_read(Req *r)
 {
-	File *f;
 	Faux *aux;
-	f = r->fid->file;
-	aux = f->aux;
-	if (f == ctl) {
-		respond(r, "not implemented");
-	} else if (f == new) {
-		if (newobj != nil)
-			readstr(r, newobj->id);
-		respond(r, nil);
-	} else if (aux != nil) {
-		char *s;
-		s = nil;
-		if (aux->read != nil) aux->read(r);
+	char *s;
+	aux = r->fid->file->aux;
+	if (aux != nil) {
+		if (aux->read != nil) s = aux->read(r);
 		else s = "no read";
-		respond(r, s);
-	} else respond(r, "fs_read: f->aux is nil");
+	} else s = "fs_read: f->aux is nil";
+	respond(r, s);
 }
 
 void
 fs_write(Req *r)
 {
 	Faux *aux;
+	char *s;
 	aux = r->fid->file->aux;
-	if (r->fid->file == ctl) {
-		char *ret, *buf;
-		buf = mallocz(r->ifcall.count + 1, 1);
-		memcpy(buf, r->ifcall.data, r->ifcall.count);
-		ret = ctlcmd(buf);
-		free(buf);
-		respond(r, ret);
-	} else if (r->fid->file == new) {
-		respond(r, "not allowed");
-	} else if (aux != nil) {
-		char *s;
-		s = nil;
+	if (aux != nil) {
 		if (aux->write != nil) {
-			aux->write(r);
+			s = aux->write(r);
 			nbsend(redrawc, &aux->obj);
 		}
 		else s = "no write";
-		respond(r, s);
-	} else respond(r, "fs_write: f->aux is nil");
+	} else s = "fs_write: f->aux is nil";
+	respond(r, s);
 }
 
-void
+char *
 arrayread(Req *r)
 {
 	Array *data;
@@ -171,9 +194,10 @@ arrayread(Req *r)
 	readbuf(r, data->p, data->count);
 	qunlock(data->l);
 	qunlock(rich.l);
+	return nil;
 }
 
-void
+char *
 arraywrite(Req *r)
 {
 	Array *data;
@@ -183,9 +207,10 @@ arraywrite(Req *r)
 	arraygrow(data, r->ifcall.count, r->ifcall.data);
 	r->ofcall.count = r->ifcall.count;
 	qunlock(rich.l);
+	return nil;
 }
 
-void
+char *
 textread(Req *r)
 {
 	Faux *aux;
@@ -209,9 +234,10 @@ textread(Req *r)
 
 	qunlock(rich.text->l);
 	qunlock(rich.l);
+	return nil;
 }
 
-void
+char *
 textwrite(Req *r)
 {
 	/* TODO: this is not exactly finished */
@@ -237,9 +263,11 @@ textwrite(Req *r)
 	qunlock(rich.l);
 
 	free(buf);
+	r->ofcall.count = r->ifcall.count;
+	return nil;
 }
 
-void
+char *
 fontread(Req *r)
 {
 	Faux *aux;
@@ -247,9 +275,10 @@ fontread(Req *r)
 	aux = r->fid->file->aux;
 	readstr(r, aux->obj->font->name);
 	qunlock(rich.l);
+	return nil;
 }
 
-void
+char *
 fontwrite(Req *r)
 {
 	char buf[4096], *bp;
@@ -267,9 +296,11 @@ fontwrite(Req *r)
 
 	aux->obj->font = getfont(fonts, bp);
 	qunlock(rich.l);
+	r->ofcall.count = r->ifcall.count;
+	return nil;
 }
 
-void
+char *
 consread(Req *r)
 {
 	if (consbuf == nil) recv(consc, &consbuf);
@@ -281,9 +312,10 @@ consread(Req *r)
 		arrayfree(consbuf);
 		consbuf = nil;
 	}
+	return nil;
 }
 
-void
+char *
 conswrite(Req *r)
 {
 	Array *a;
@@ -291,10 +323,39 @@ conswrite(Req *r)
 	arraygrow(a, r->ifcall.count, r->ifcall.data);
 	send(insertc, &a);
 	r->ofcall.count = r->ifcall.count;
+	return nil;
 }
 
-void
-ctlread(Req *)
+char *
+ctlread(Req *r)
 {
-	
+	if (ctlbuf == nil) recv(ctlc, &ctlbuf);
+	r->ifcall.offset = 0;
+	readbuf(r, ctlbuf->p, ctlbuf->count);
+	if (arraydel(ctlbuf, 0, r->ofcall.count) != 0)
+		sysfatal("ctlread: %r");
+	if (ctlbuf->count == 0) {
+		arrayfree(ctlbuf);
+		ctlbuf = nil;
+	}
+	return nil;
+}
+
+char *
+ctlwrite(Req *r)
+{
+	char *ret, *buf;
+	buf = mallocz(r->ifcall.count + 1, 1);
+	memcpy(buf, r->ifcall.data, r->ifcall.count);
+	ret = ctlcmd(buf);
+	free(buf);
+	r->ofcall.count = r->ifcall.count;
+	return ret;
+}
+
+char *
+newread(Req *r)
+{
+	readstr(r, newobj->id);
+	return nil;
 }

@@ -391,7 +391,7 @@ scroll(Point p, Rich *r)
 }
 
 Faux *
-fauxalloc(Object *obj, Array *data, void (*read)(Req *), void (*write)(Req *))
+fauxalloc(Object *obj, Array *data, char * (*read)(Req *), char * (*write)(Req *))
 {
 	Faux *aux;
 	aux = mallocz(sizeof(Faux), 1);
@@ -416,52 +416,6 @@ objectfree(Object *obj)
 {
 	arrayfree(obj->dlink);
 	arrayfree(obj->dimage);
-}
-
-void
-rmobjectftree(Object *obj)
-{
-	free(obj->ftext->aux);
-	free(obj->ffont->aux);
-	free(obj->flink->aux);
-	free(obj->fimage->aux);
-
-	obj->ftext->aux = nil;
-	obj->ffont->aux = nil;
-	obj->flink->aux = nil;
-	obj->fimage->aux = nil;
-
-	removefile(obj->ftext);
-	removefile(obj->ffont);
-	removefile(obj->flink);
-	removefile(obj->fimage);
-
-	removefile(obj->dir);
-
-	free(obj->id);
-}
-
-Object *
-mkobjectftree(Object *obj, File *root)
-{
-	obj->id = smprint("%ulld", ++rich.idcount);
-
-	obj->dir = createfile(root, obj->id, "richterm", DMDIR|0555, nil);
-
-
-	obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666,
-	  fauxalloc(obj, nil, textread, textwrite));
-
-	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666,
-	  fauxalloc(obj, nil, fontread, fontwrite));
-
-	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666,
-	  fauxalloc(obj, obj->dlink, arrayread, arraywrite));
-
-	obj->fimage = createfile(obj->dir, "image", "richterm", 0666,
-	  fauxalloc(obj, obj->dimage, arrayread, arraywrite));
-
-	return obj;
 }
 
 void
