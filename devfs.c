@@ -38,7 +38,6 @@ devfs_write(Req *r)
 	File *f;
 	f = r->fid->file;
 	if (f == cons){
-//		Object *obj;
 		Array *a;
 		a = arraycreate(sizeof(char), r->ifcall.count, nil);
 		arraygrow(a, r->ifcall.count, r->ifcall.data);
@@ -46,16 +45,6 @@ devfs_write(Req *r)
 
 		r->ofcall.count = r->ifcall.count;
 
-//		obj = objectcreate();
-//		mkobjectftree(obj, fsctl->tree->root);
-//		objinsertbeforelast(obj);
-
-//		arrayinsert(rich.text, olast->offset,
-//		  r->ifcall.count,
-//		  r->ifcall.data);
-//		olast->offset += r->ifcall.count;
-
-//		nbsend(redrawc, &obj);
 		respond(r, nil);
 	} else if (f == consctl) {
 		respond(r, "not implemented");
