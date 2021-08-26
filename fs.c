@@ -41,6 +41,7 @@ initfs(char *srvname)
 	newobj = nil;
 	consbuf = nil;
 	consc = chancreate(sizeof(Array *), 1024);
+	ctlc = chancreate(sizeof(Array *), 1024);
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	fsroot = srv.tree->root;
 	new = createfile(fsroot, "new", "richterm", 0444, 

@@ -799,9 +799,15 @@ rgen(int n)
 }
 
 void
-rfollow(Object *)
+rfollow(Object *obj)
 {
-	/* TODO: send link to be read from /ctl file */
+	Array *a;
+	a = arraycreate(sizeof(char), 1024, nil);
+	arraygrow(a, 5, "link ");
+	arraygrow(a, obj->dlink->count, arrayget(obj->dlink, 0, nil));
+	arraygrow(a, 1, "\n");
+
+	nbsend(ctlc, &a);
 }
 
 void
