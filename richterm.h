@@ -1,5 +1,7 @@
 extern Channel *redrawc;
 extern Channel *insertc;
+extern Channel *consc;
+extern File *fsroot;
 
 void drawscrollbar(void);
 
@@ -70,48 +72,24 @@ extern Rich rich;
 void drawpage(Image *, Rich *);
 void generatepage(Rich *, long);
 
-typedef struct Devfsctl Devfsctl;
-
-struct Devfsctl {
-	Channel *rc;
-	Channel *wc;
-};
-
-Devfsctl * initdevfs(void);
-
-typedef struct Fsctl Fsctl;
-
-struct Fsctl {
-	Channel *c;
-	Tree *tree;
-};
-
-extern Fsctl *fsctl;
-
-Fsctl * initfs(char *);
+int initfs(char *);
 
 typedef struct Faux Faux;
 
 struct Faux {
-	int type;
 	Object *obj;
 	Array *data;
-	void (*read)(Req *, void *);
-	void (*write)(Req *, void *);
+	void (*read)(Req *);
+	void (*write)(Req *);
 };
 
-enum {
-	FT_TEXT,
-	FT_FONT,
-	FT_LINK,
-	FT_IMAGE
-};
+Faux * fauxalloc(Object *, Array *, void (*)(Req *), void (*)(Req *));
 
-Faux * fauxalloc(Object *, Array *, int);
-
-void textread(Req *, void *);
-void textwrite(Req *, void *);
-void arrayread(Req *, void *);
-void arraywrite(Req *, void *);
-void fontread(Req *, void *);
-void fontwrite(Req *, void *);
+void textread(Req *);
+void textwrite(Req *);
+void arrayread(Req *);
+void arraywrite(Req *);
+void fontread(Req *);
+void fontwrite(Req *);
+void consread(Req *);
+void conswrite(Req *);

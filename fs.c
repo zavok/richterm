@@ -8,35 +8,38 @@
 #include "array.h"
 #include "richterm.h"
 
-File *new, *ctl;
+File *new, *ctl, *text, *cons, *consctl;
 Object *newobj;
+File *fsroot;
+Channel *consc;
 
 void fs_open(Req *);
 void fs_read(Req *);
 void fs_write(Req *);
 void ftree_destroy(File *);
 
-Fsctl *
+int
 initfs(char *srvname)
 {
-	Fsctl *fsctl;
 	static Srv srv = {
 		.open  = fs_open,
 		.read  = fs_read,
 		.write = fs_write,
 	};
 	newobj = nil;
-	fsctl = mallocz(sizeof(Fsctl), 1);
-	fsctl->c = chancreate(sizeof(int), 0);
+	consc = chancreate(sizeof(Array *), 1024);
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, ftree_destroy);
-	if (srv.tree == nil) return nil;
-	fsctl->tree = srv.tree;
-	new = createfile(srv.tree->root, "new", "richterm", 0666, fsctl);
-	if (new == nil) return nil;
-	ctl = createfile(srv.tree->root, "ctl", "richterm", 0666, fsctl);
-	if (ctl == nil) return nil;
+	fsroot = srv.tree->root;
+	new = createfile(fsroot, "new", "richterm", 0666, nil);
+	ctl = createfile(fsroot, "ctl", "richterm", 0666, nil);
+	text = createfile(fsroot, "text", "richterm", 0444, 
+		fauxalloc(nil, rich.text, arrayread, nil));
+	cons = createfile(fsroot, "cons", "richterm", 0666, 
+		fauxalloc(nil, nil, consread, conswrite));
+	consctl = createfile(fsroot, "consctl", "richterm", 0666, 
+		fauxalloc(nil, nil, nil, nil));
 	threadpostmountsrv(&srv, srvname, "/mnt/richterm", MREPL);
-	return fsctl;
+	return 0;
 }
 
 char *
@@ -97,23 +100,15 @@ ftree_destroy(File *f)
 void
 fs_open(Req *r)
 {
-	Fsctl *fsctl;
-	File *f;
-
-	fsctl = new->aux;
-	f = r->fid->file;
-
-	if (f == new) {
+	if (r->fid->file == new) {
 		newobj = objectcreate();
-		mkobjectftree(newobj, fsctl->tree->root);
+		mkobjectftree(newobj, fsroot);
 		objinsertbeforelast(newobj);
 
 		/* Because our newobj is created empty, there's no need
 		   to move text from olast around. */
 	}
-
 	respond(r, nil);
-
 }
 
 void
@@ -130,39 +125,45 @@ fs_read(Req *r)
 			readstr(r, newobj->id);
 		respond(r, nil);
 	} else if (aux != nil) {
-		aux->read(r, aux->data);
-		respond(r, nil);
+		char *s;
+		s = nil;
+		if (aux->read != nil) aux->read(r);
+		else s = "no read";
+		respond(r, s);
 	} else respond(r, "fs_read: f->aux is nil");
 }
 
 void
 fs_write(Req *r)
 {
-	File *f;
 	Faux *aux;
-	f = r->fid->file;
-	aux = f->aux;
-	if (f == ctl) {
+	aux = r->fid->file->aux;
+	if (r->fid->file == ctl) {
 		char *ret, *buf;
 		buf = mallocz(r->ifcall.count + 1, 1);
 		memcpy(buf, r->ifcall.data, r->ifcall.count);
 		ret = ctlcmd(buf);
 		free(buf);
 		respond(r, ret);
-	} else if (f == new) {
+	} else if (r->fid->file == new) {
 		respond(r, "not allowed");
 	} else if (aux != nil) {
-		aux->write(r, aux->data);
-		respond(r, nil);
-		nbsend(redrawc, &aux->obj);
+		char *s;
+		s = nil;
+		if (aux->write != nil) {
+			aux->write(r);
+			nbsend(redrawc, &aux->obj);
+		}
+		else s = "no write";
+		respond(r, s);
 	} else respond(r, "fs_write: f->aux is nil");
 }
 
 void
-arrayread(Req *r, void *v)
+arrayread(Req *r)
 {
 	Array *data;
-	data = v;
+	data = ((Faux *)r->fid->file->aux)->data;
 	qlock(rich.l);
 	qlock(data->l);
 	readbuf(r, data->p, data->count);
@@ -171,10 +172,10 @@ arrayread(Req *r, void *v)
 }
 
 void
-arraywrite(Req *r, void *v)
+arraywrite(Req *r)
 {
 	Array *data;
-	data = v;
+	data = ((Faux *)r->fid->file->aux)->data;
 	qlock(rich.l);
 	data->count = 0;
 	arraygrow(data, r->ifcall.count, r->ifcall.data);
@@ -183,7 +184,7 @@ arraywrite(Req *r, void *v)
 }
 
 void
-textread(Req *r, void *)
+textread(Req *r)
 {
 	Faux *aux;
 	Object *obj, *oe;
@@ -209,7 +210,7 @@ textread(Req *r, void *)
 }
 
 void
-textwrite(Req *r, void *)
+textwrite(Req *r)
 {
 	/* TODO: this is not exactly finished */
 	/* in particular TRUNK/APPEND handling is needed */
@@ -237,7 +238,7 @@ textwrite(Req *r, void *)
 }
 
 void
-fontread(Req *r, void *)
+fontread(Req *r)
 {
 	Faux *aux;
 	qlock(rich.l);
@@ -247,7 +248,7 @@ fontread(Req *r, void *)
 }
 
 void
-fontwrite(Req *r, void *)
+fontwrite(Req *r)
 {
 	char buf[4096], *bp;
 	Faux *aux;
@@ -264,4 +265,24 @@ fontwrite(Req *r, void *)
 
 	aux->obj->font = getfont(fonts, bp);
 	qunlock(rich.l);
+}
+
+void
+consread(Req *r)
+{
+	Array *dv;
+	recv(consc, &dv);
+	r->ofcall.count = dv->count;
+	memcpy(r->ofcall.data, dv->p, dv->count);
+	arrayfree(dv);
+}
+
+void
+conswrite(Req *r)
+{
+	Array *a;
+	a = arraycreate(sizeof(char), r->ifcall.count, nil);
+	arraygrow(a, r->ifcall.count, r->ifcall.data);
+	send(insertc, &a);
+	r->ofcall.count = r->ifcall.count;
 }

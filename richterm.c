@@ -26,8 +26,6 @@ int hostpid = -1;
 Channel *pidchan, *redrawc, *insertc;
 Mousectl *mctl;
 Keyboardctl *kctl;
-Devfsctl *dctl;
-Fsctl *fsctl;
 Array *fonts;
 Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg, *Itext;
 
@@ -184,7 +182,7 @@ threadmain(int argc, char **argv)
 			break;
 		case INSERT:
 			obj = objectcreate();
-			mkobjectftree(obj, fsctl->tree->root);
+			mkobjectftree(obj, fsroot);
 			objinsertbeforelast(obj);
 			objsettext(obj, arrayget(av, 0, nil), av->count);
 			arrayfree(av);
@@ -246,14 +244,14 @@ threadmain(int argc, char **argv)
 					arraygrow(dv, rich.text->count - olast->offset,
 					  arrayget(rich.text, olast->offset, nil));
 
-					nbsend(dctl->rc, &dv);
+					nbsend(consc, &dv);
 
 					/* dv is freed on recv end */
 
 					qunlock(rich.l);
 					
 					obj = objectcreate();
-					mkobjectftree(obj, fsctl->tree->root);
+					mkobjectftree(obj, fsroot);
 					objinsertbeforelast(obj);
 					olast->offset = rich.text->count;
 				}
@@ -393,11 +391,11 @@ scroll(Point p, Rich *r)
 }
 
 Faux *
-fauxalloc(Object *obj, Array *data, int type)
+fauxalloc(Object *obj, Array *data, void (*read)(Req *), void (*write)(Req *))
 {
 	Faux *aux;
 	aux = mallocz(sizeof(Faux), 1);
-	*aux = (Faux) {type, obj, data, arrayread, arraywrite};
+	*aux = (Faux) {obj, data, read, write};
 	return aux;
 }
 
@@ -446,27 +444,22 @@ rmobjectftree(Object *obj)
 Object *
 mkobjectftree(Object *obj, File *root)
 {
-	Faux *auxtext, *auxfont, *auxlink, *auximage;
-
 	obj->id = smprint("%ulld", ++rich.idcount);
 
 	obj->dir = createfile(root, obj->id, "richterm", DMDIR|0555, nil);
 
-	auxtext  = fauxalloc(obj, nil, FT_TEXT);
-	auxfont  = fauxalloc(obj, nil, FT_FONT);
-	auxlink  = fauxalloc(obj, obj->dlink, FT_LINK);
-	auximage = fauxalloc(obj, obj->dimage, FT_IMAGE);
 
-	auxtext->read = textread;
-	auxtext->write = textwrite;
+	obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666,
+	  fauxalloc(obj, nil, textread, textwrite));
 
-	auxfont->read = fontread;
-	auxfont->write = fontwrite;
+	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666,
+	  fauxalloc(obj, nil, fontread, fontwrite));
 
-	obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666, auxtext);
-	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666, auxfont);
-	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666, auxlink);
-	obj->fimage = createfile(obj->dir, "image", "richterm", 0666, auximage);
+	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666,
+	  fauxalloc(obj, obj->dlink, arrayread, arraywrite));
+
+	obj->fimage = createfile(obj->dir, "image", "richterm", 0666,
+	  fauxalloc(obj, obj->dimage, arrayread, arraywrite));
 
 	return obj;
 }
@@ -498,10 +491,10 @@ runcmd(void *args)
 	
 	rfork(RFNAMEG);
 
-	if ((dctl = initdevfs()) == nil)
-		sysfatal("initdevfs failed: %r");
-	if ((fsctl = initfs(srvname)) == nil)
+	if ((initfs(srvname)) != 0)
 		sysfatal("initfs failed: %r");
+
+	bind("/mnt/richterm", "/dev/", MBEFORE);
 
 	rfork(RFFDG);
 	close(0);
