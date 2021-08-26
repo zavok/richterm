@@ -15,6 +15,12 @@ _arraycheck(Array *ap, long n, char *s)
 	return 0;
 }
 
+void * 
+_arrayget(Array *ap, long n)
+{
+	return (void *)(ap->p + ap->size * n);
+}
+
 Array * 
 arraycreate(long size, long n, void (*free)(void *))
 {
@@ -41,10 +47,9 @@ arrayfree(Array *ap)
 	qlock(ap->l);
 	if (ap->free != nil) {
 		for (i = 0; i < ap->count; i ++) {
-			void *v;
-			v = nil;
-			arrayget(ap, i, &v);
-			if (v != nil) ap->free(v);
+			void **v;
+			v = _arrayget(ap, i);
+			if (*v != nil) ap->free(*v);
 		}
 	}
 	qunlock(ap->l);
@@ -90,36 +95,40 @@ arraydel(Array *ap, long offset, long count)
 
 	void *v, *ve;
 	long i;
-	if (_arraycheck(ap, offset + count, "arraydel") != 0) return -1;
+	if (_arraycheck(ap, offset, "arraydel") != 0) return -1;
+	if (offset + count > ap->count) {
+		werrstr("arraydel: count past array limit");
+		return -1;
+	};
+
+	qlock(ap->l);
 
 	if (ap->free != nil) {
 		for (i = offset; i < offset+ count; i++) {
-			v = arrayget(ap, i, nil);
+			v = _arrayget(ap, i);
 			ap->free(v);
 		}
 	}
 
-	v = arrayget(ap, offset, nil);
-	ve = arrayget(ap, offset + count, nil);
-	qlock(ap->l);
+	v = _arrayget(ap, offset);
+	ve = _arrayget(ap, offset + count);
 	memcpy(v, ve, (ap->count - offset - count) * ap->size);
 	ap->count -= count;
 	qunlock(ap->l);
 	return 0;
 }
 
-void * 
+void *
 arrayget(Array *ap, long n, void *v)
 {
 	assert(ap->magic == MAGIC);
-
 	if (_arraycheck(ap, n, "arrayget") != 0) return nil;
 	qlock(ap->l);
 	if (v != nil) {
 		memcpy(v, ap->p + ap->size * n, ap->size);
 	}
 	qunlock(ap->l);
-	return (void *)(ap->p + ap->size * n);
+	return _arrayget(ap, n);
 }
 
 void *
@@ -127,7 +136,7 @@ arrayend(Array *ap)
 {
 	assert(ap->magic == MAGIC);
 
-	return (void *)(ap->p + ap->size * ap->count);
+	return _arrayget(ap, ap->count);
 }
 
 void *
@@ -145,9 +154,11 @@ arrayinsert(Array *ap, long n, long m, void *v)
 		werrstr("arrayinsert: %r");
 		return nil;
 	}
-	vs = arrayget(ap, n, nil);
-	vn = arrayget(ap, n + m, nil);
+
 	qlock(ap->l);
+
+	vs = _arrayget(ap, n);
+	vn = _arrayget(ap, n + m);
 	memcpy(vn, vs, (ap->count - n - m) * ap->size);
 	memset(vs, 0, m * ap->size);
 	if (v != nil) {

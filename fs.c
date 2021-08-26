@@ -12,6 +12,7 @@ File *new, *ctl, *text, *cons, *consctl;
 Object *newobj;
 File *fsroot;
 Channel *consc;
+Array *consbuf;
 
 void fs_open(Req *);
 void fs_read(Req *);
@@ -27,6 +28,7 @@ initfs(char *srvname)
 		.write = fs_write,
 	};
 	newobj = nil;
+	consbuf = nil;
 	consc = chancreate(sizeof(Array *), 1024);
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, ftree_destroy);
 	fsroot = srv.tree->root;
@@ -270,11 +272,15 @@ fontwrite(Req *r)
 void
 consread(Req *r)
 {
-	Array *dv;
-	recv(consc, &dv);
-	r->ofcall.count = dv->count;
-	memcpy(r->ofcall.data, dv->p, dv->count);
-	arrayfree(dv);
+	if (consbuf == nil) recv(consc, &consbuf);
+	r->ifcall.offset = 0;
+	readbuf(r, consbuf->p, consbuf->count);
+	if (arraydel(consbuf, 0, r->ofcall.count) != 0)
+		sysfatal("consread: %r");
+	if (consbuf->count == 0) {
+		arrayfree(consbuf);
+		consbuf = nil;
+	}
 }
 
 void
@@ -285,4 +291,10 @@ conswrite(Req *r)
 	arraygrow(a, r->ifcall.count, r->ifcall.data);
 	send(insertc, &a);
 	r->ofcall.count = r->ifcall.count;
+}
+
+void
+ctlread(Req *)
+{
+	
 }
