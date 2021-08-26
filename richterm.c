@@ -53,8 +53,17 @@ void (*rfunc[])(Object *) = {rfollow, rsnarf, rplumb, nil};
 char * rgen(int);
 
 Menu rmenu = {
-	.item = ritems,
-	.gen = nil,
+	.item = nil,
+	.gen = rgen,
+	.lasthit = 0,
+};
+
+char * rusergen(int);
+void ruseract(int);
+
+Menu rusermenu = {
+	.item = nil,
+	.gen = rusergen,
 	.lasthit = 0,
 };
 
@@ -102,6 +111,9 @@ threadmain(int argc, char **argv)
 		sysfatal("%s: %r", argv0);
 	if ((kctl = initkeyboard(nil)) == nil)
 		sysfatal("%s: %r", argv0);
+
+	display->locking = 1;
+	unlockdisplay(display);
 
 	Iscrollbar = allocimage(
 	  display, Rect(0,0,1,1), screen->chan, 1, 0x999999FF);
@@ -175,10 +187,12 @@ threadmain(int argc, char **argv)
 			nbsend(redrawc, nil);
 			break;
 		case REDRAW:
+			lockdisplay(display);
 			draw(screen, screen->r, Inormbg, nil, ZP);
 			redraw(ov);
 			drawscrollbar();
 			flushimage(display, 1);
+			unlockdisplay(display);
 			break;
 		case INSERT:
 			obj = objectcreate();
@@ -333,7 +347,13 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 			obj = getobj(mv.xy);
 			if ((obj != nil) && (obj->dlink->count > 0)) {
 				f = menuhit(3, mc, &rmenu, nil);
-				if (f >= 0) rfunc[f](obj);
+				if (f >= 0) {
+					if (f >= sizeof(ritems) - 1) ruseract(f - 2);
+					else rfunc[f](obj);
+				}
+			} else if (menubuf->count > 0) {
+				f = menuhit(3, mc, &rusermenu, nil);
+				if (f >= 0) ruseract(f);
 			}
 			*mmode = MM_NONE;
 		}
@@ -792,10 +812,8 @@ objsettext(Object *obj, char *data, long count)
 char *
 rgen(int n)
 {
-	if (n < sizeof (ritems)) return ritems[n];
-	/* TODO:
-	   if n>ritems, return items from /menu file (doesn't exist yet) */
-	return nil;
+	if (n < 3) return ritems[n];
+	else return rusergen(n - 3);
 }
 
 void
@@ -842,4 +860,44 @@ rplumb(Object *obj)
 		plumbsend(pd, &m);
 		close(pd);
 	}
+}
+
+void
+ruseract(int f)
+{
+	Array *a;
+	char *s;
+	s = rusergen(f);
+	a = arraycreate(sizeof(char), 2048, nil);
+	arraygrow(a, 5, "menu ");
+	arraygrow(a, strlen(s), s);
+	arraygrow(a, 1, "\n");
+	nbsend(ctlc, &a);
+}
+
+char genbuf[1024];
+
+
+char *
+rusergen(int f)
+{
+	int i, k;
+	char *ps, *pe;
+	memset(genbuf, 0, sizeof(genbuf));
+	ps = menubuf->p;
+	for (k = 0, i = 0; (k != f) && (i < menubuf->count); i++) {
+		if (menubuf->p[i] == '\n') {
+			ps = menubuf->p + i;
+			k++;
+		}
+	}
+	if (k != f) return nil;
+	ps++; i++;
+	for (pe = ps; i < menubuf->count; i++, pe++) {
+		if (*pe == '\n') break;
+	}
+	if (pe == '\0') return nil;
+	if (ps == pe) return nil;
+	memcpy(genbuf, ps, pe - ps - 1);
+	return genbuf;
 }

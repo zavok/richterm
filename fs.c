@@ -8,11 +8,11 @@
 #include "array.h"
 #include "richterm.h"
 
-File *new, *ctl, *text, *cons, *consctl;
+File *new, *ctl, *text, *cons, *consctl, *menu;
 Object *newobj;
 File *fsroot;
 Channel *consc, *ctlc;
-Array *consbuf, *ctlbuf;
+Array *consbuf, *ctlbuf, *menubuf;
 
 void fs_open(Req *);
 void fs_read(Req *);
@@ -40,6 +40,7 @@ initfs(char *srvname)
 	};
 	newobj = nil;
 	consbuf = nil;
+	menubuf = arraycreate(sizeof(char), 1024, nil);
 	consc = chancreate(sizeof(Array *), 1024);
 	ctlc = chancreate(sizeof(Array *), 1024);
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
@@ -54,6 +55,8 @@ initfs(char *srvname)
 		fauxalloc(nil, nil, consread, conswrite));
 	consctl = createfile(fsroot, "consctl", "richterm", 0666, 
 		fauxalloc(nil, nil, nil, nil));
+	menu = createfile(fsroot, "menu", "richterm", 0666, 
+		fauxalloc(nil, menubuf, arrayread, arraywrite));
 	threadpostmountsrv(&srv, srvname, "/mnt/richterm", MREPL);
 	return 0;
 }
