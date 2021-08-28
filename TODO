@@ -1,8 +1,23 @@
 # images
 
-draw them
+something in image drawing routines is broken, not handling it well when
+image's rectangle.min != ZP.
 
-# links
+# fs_flush
 
-highlight them and add 3-button menu for interacting with them
+We need to prevent server from locking up.
 
+See 9pqueue(2)
+
+I think I need an independent queue for every blocking file.
+
+# fix crashes
+
+when you write into files, also related to file trunkating.
+
+# simplify file handling
+
+Add Array for text to objects, and use standard arrayread/arraywrite.
+Copy array back to global text buffer on destroyfid
+
+Do the same for fonts.

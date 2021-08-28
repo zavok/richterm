@@ -8,27 +8,33 @@
 #include "array.h"
 #include "richterm.h"
 
-File *new, *ctl, *text, *cons, *consctl, *menu;
-Object *newobj;
-File *fsroot;
-Channel *consc, *ctlc;
 Array *consbuf, *ctlbuf, *menubuf;
+Channel *consc, *ctlc;
+File *fsroot;
+File *cons, *consctl, *ctl, *menu, *new, *text;
+Object *newobj;
+Reqqueue *rq;
 
-void fs_open(Req *);
-void fs_read(Req *);
-void fs_write(Req *);
-void ftree_destroy(File *);
-char * textread(Req *);
-char * textwrite(Req *);
+
 char * arrayread(Req *);
 char * arraywrite(Req *);
-char * fontread(Req *);
-char * fontwrite(Req *);
 char * consread(Req *);
 char * conswrite(Req *);
 char * ctlread(Req *);
 char * ctlwrite(Req *);
+char * fontread(Req *);
+char * fontwrite(Req *);
 char * newread(Req *);
+char * textread(Req *);
+char * textwrite(Req *);
+void delayedread(Req *);
+void fs_destroyfid(Fid *);
+void fs_flush(Req *);
+void fs_open(Req *);
+void fs_read(Req *);
+void fs_write(Req *);
+void imageclose(Fid *);
+
 
 int
 initfs(char *srvname)
@@ -37,9 +43,12 @@ initfs(char *srvname)
 		.open  = fs_open,
 		.read  = fs_read,
 		.write = fs_write,
+		.flush = fs_flush,
+		.destroyfid = fs_destroyfid,
 	};
 	newobj = nil;
 	consbuf = nil;
+	rq = reqqueuecreate();
 	menubuf = arraycreate(sizeof(char), 1024, nil);
 	consc = chancreate(sizeof(Array *), 1024);
 	ctlc = chancreate(sizeof(Array *), 1024);
@@ -145,16 +154,30 @@ ctlcmd(char *buf)
 	return nil;
 }
 
+
+void
+fs_destroyfid(Fid *fid)
+{
+	if (fid->file == nil) return;
+	if (fid->file->aux == nil) return;
+	if (((Faux *)fid->file->aux)->obj == nil) return;
+	if (((Faux *)fid->file->aux)->obj->fimage == nil) return;
+	if (fid->file == ((Faux *)fid->file->aux)->obj->fimage) {
+		imageclose(fid);
+	}
+}
+
 void
 fs_open(Req *r)
 {
+	if (r->fid->omode && OTRUNC) {
+//		if ((r->fid->file->aux != nil) && (((Faux *)r->fid->file->aux)->data != nil))
+//			((Faux *)r->fid->file->aux)->data->count = 0;
+	}
 	if (r->fid->file == new) {
 		newobj = objectcreate();
 		mkobjectftree(newobj, fsroot);
 		objinsertbeforelast(newobj);
-
-		/* Because our newobj is created empty, there's no need
-		   to move text from olast around. */
 	}
 	respond(r, nil);
 }
@@ -162,14 +185,7 @@ fs_open(Req *r)
 void
 fs_read(Req *r)
 {
-	Faux *aux;
-	char *s;
-	aux = r->fid->file->aux;
-	if (aux != nil) {
-		if (aux->read != nil) s = aux->read(r);
-		else s = "no read";
-	} else s = "fs_read: f->aux is nil";
-	respond(r, s);
+	reqqueuepush(rq, r, delayedread);
 }
 
 void
@@ -188,6 +204,25 @@ fs_write(Req *r)
 	respond(r, s);
 }
 
+void
+fs_flush(Req *r)
+{
+	respond(r, nil);
+}
+
+void
+delayedread(Req *r)
+{
+	Faux *aux;
+	char *s;
+	aux = r->fid->file->aux;
+	if (aux != nil) {
+		if (aux->read != nil) s = aux->read(r);
+		else s = "no read";
+	} else s = "fs_read: f->aux is nil";
+	respond(r, s);	
+}
+
 char *
 arrayread(Req *r)
 {
@@ -204,12 +239,21 @@ arrayread(Req *r)
 char *
 arraywrite(Req *r)
 {
+	long count;
 	Array *data;
-	data = ((Faux *)r->fid->file->aux)->data;
 	qlock(rich.l);
-	data->count = 0;
-	arraygrow(data, r->ifcall.count, r->ifcall.data);
+	data = ((Faux *)r->fid->file->aux)->data;
+	count = r->ifcall.count + r->ifcall.offset;
+	if (count > data->count) arraygrow(data, count - data->count, nil);
+	else data->count = count;
+
+//	data->count = 0;
+//	arraygrow(data, r->ifcall.count, r->ifcall.data);
+	qlock(data->l);
+	memcpy(data->p + r->ifcall.offset, r->ifcall.data, r->ifcall.count);
+	qunlock(data->l);
 	r->ofcall.count = r->ifcall.count;
+	r->fid->file->length = data->count;
 	qunlock(rich.l);
 	return nil;
 }
@@ -235,6 +279,8 @@ textread(Req *r)
 	qlock(rich.text->l);
 
 	readbuf(r, s, n - obj->offset);
+
+	r->fid->file->length = objtextlen(obj);
 
 	qunlock(rich.text->l);
 	qunlock(rich.l);
@@ -325,7 +371,7 @@ conswrite(Req *r)
 	Array *a;
 	a = arraycreate(sizeof(char), r->ifcall.count, nil);
 	arraygrow(a, r->ifcall.count, r->ifcall.data);
-	send(insertc, &a);
+	nbsend(insertc, &a);
 	r->ofcall.count = r->ifcall.count;
 	return nil;
 }
@@ -362,4 +408,82 @@ newread(Req *r)
 {
 	readstr(r, newobj->id);
 	return nil;
+}
+
+void
+imageclose(Fid *fid)
+{
+	Array *data;
+	Rectangle r;
+	char *p;
+	int compressed, m;
+	long n;
+	ulong chan;
+	Faux *aux;
+
+	
+	compressed = 0;
+	aux = fid->file->aux;
+	data = aux->data;
+	
+	if (aux->obj->image != nil) return;
+
+	qlock(data->l);
+	p = data->p;
+	n = data->count;
+	if (n < 10) {
+		data->count = 0;
+		aux->obj->ftext->length = 0;
+		qunlock(data->l);
+		fprint(2, "imageclose: image file too short\n");
+		return;
+	}
+	if (strncmp("compressed\n", p, 11) == 0) {
+		p += 11;
+		n -= 11;
+		compressed = 1;
+	}
+	if (n < 60) {
+		data->count = 0;
+		aux->obj->ftext->length = 0;
+		qunlock(data->l);
+		fprint(2, "imageclose: image file too short\n");
+		return;
+	}
+	if ((chan = strtochan(p)) == 0) {
+		data->count = 0;
+		aux->obj->ftext->length = 0;
+		qunlock(data->l);
+		fprint(2, "imageclose: image channel unknown: %12s\n", p);
+		return;
+	}
+	p += 12; n -= 12;
+	r.min.x = atoi(p); p += 12; n -= 12;
+	r.min.y = atoi(p); p += 12; n -= 12;
+	r.max.x = atoi(p); p += 12; n -= 12;
+	r.max.y = atoi(p); p += 12; n -= 12;
+
+	lockdisplay(display);
+	aux->obj->image = allocimage(display, r, chan, 0, DBlue);
+	if (aux->obj->image == nil) {
+		data->count = 0;
+		aux->obj->ftext->length = 0;
+		qunlock(data->l);
+		unlockdisplay(display);
+		fprint(2, "imageclose: allocimage failed: %r\n");
+		return;
+	}
+	if (compressed != 0) m = cloadimage(aux->obj->image, r, (uchar *)p, n);
+	else m = loadimage(aux->obj->image, r, (uchar *)p, n);
+	if (m != n) {
+		fprint(2, "imageclose: failed to load image\n");
+		freeimage(aux->obj->image);
+		data->count =  0;
+		aux->obj->ftext->length = 0;
+	}
+
+	unlockdisplay(display);
+	qunlock(data->l);
+
+	return;
 }

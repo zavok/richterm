@@ -649,13 +649,24 @@ drawobject(Object *obj, Point *cur)
 		*cur = obj->prev->nextlinept;
 	}
 
-	obj->startpt = *cur;
-
 	obj->nextlinept = Pt(0, cur->y + obj->font->height);
+
 	if ((obj->prev != nil) && (cur->x != 0)) {
 		if (obj->nextlinept.y < obj->prev->nextlinept.y)
 			obj->nextlinept.y = obj->prev->nextlinept.y;
 	}
+
+	if (obj->image != nil) {
+		Rectangle r;
+		r = rectaddpt(obj->image->r,
+		  subpt(addpt(*cur, rich.page.r.min), rich.page.scroll));
+		draw(screen, r, obj->image, nil, ZP);
+		cur->x += Dx(r);
+		if (cur->y + Dy(r) > obj->nextlinept.y)
+			obj->nextlinept.y = cur->y + Dy(r);
+	}
+
+	obj->startpt = *cur;
 
 	if (obj->next == nil) n = rich.text->count;
 	else n = obj->next->offset;
@@ -679,7 +690,6 @@ redraw(Object *)
 	obj = nil;
 	cur = ZP;
 	qlock(rich.l);
-
 	for (i = 0; i < rich.objects->count; i++) {
 		if (arrayget(rich.objects, i, &obj) == nil)
 			sysfatal("redraw: %r");
@@ -803,6 +813,7 @@ objsettext(Object *obj, char *data, long count)
 	qunlock(rich.text->l);
 
 	qlock(rich.objects->l);
+	if (obj->ftext != nil) obj->ftext->length = count;
 	for (obj = obj->next; obj != nil; obj = obj->next) {
 		obj->offset += dn;
 	}
@@ -875,12 +886,12 @@ ruseract(int f)
 	nbsend(ctlc, &a);
 }
 
-char genbuf[1024];
 
 
 char *
 rusergen(int f)
 {
+	static char genbuf[1024];
 	int i, k;
 	char *ps, *pe;
 	memset(genbuf, 0, sizeof(genbuf));
