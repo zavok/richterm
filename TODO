@@ -1,23 +1,21 @@
-# images
+% g 'TODO'
 
-something in image drawing routines is broken, not handling it well when
-image's rectangle.min != ZP.
+Rename Objects to Elements.
 
-# fs_flush
+Rethink color palette.
 
-We need to prevent server from locking up.
+Something in image drawing routines is broken, not handling it well
+when image's rectangle.min != ZP.
 
-See 9pqueue(2)
+Prevent server from locking up, See 9pqueue(2).  Probably need an
+independent queue for every blocking file.
 
-I think I need an independent queue for every blocking file.
+Handle OTRUNC.
 
-# fix crashes
+Fix crashes when you write into files.
 
-when you write into files, also related to file trunkating.
+Simplify file handling: add Array for text to objects, and use
+standard arrayread/arraywrite.  Copy array back to global text buffer
+on destroyfid.  Do the same for fonts.
 
-# simplify file handling
-
-Add Array for text to objects, and use standard arrayread/arraywrite.
-Copy array back to global text buffer on destroyfid
-
-Do the same for fonts.
+Separate functions for open and destroyfid, the way read/write works now.
