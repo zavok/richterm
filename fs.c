@@ -56,13 +56,13 @@ initfs(char *srvname)
 	fsroot = srv.tree->root;
 	new = createfile(fsroot, "new", "richterm", 0444, 
 		fauxalloc(nil, nil, newread, nil));
-	ctl = createfile(fsroot, "ctl", "richterm", 0666, 
+	ctl = createfile(fsroot, "ctl", "richterm", DMAPPEND|0666, 
 		fauxalloc(nil, nil, ctlread, ctlwrite));
 	text = createfile(fsroot, "text", "richterm", 0444, 
 		fauxalloc(nil, rich.text, arrayread, nil));
-	cons = createfile(fsroot, "cons", "richterm", 0666, 
+	cons = createfile(fsroot, "cons", "richterm", DMAPPEND|0666, 
 		fauxalloc(nil, nil, consread, conswrite));
-	consctl = createfile(fsroot, "consctl", "richterm", 0666, 
+	consctl = createfile(fsroot, "consctl", "richterm", DMAPPEND|0666, 
 		fauxalloc(nil, nil, nil, nil));
 	menu = createfile(fsroot, "menu", "richterm", 0666, 
 		fauxalloc(nil, menubuf, arrayread, arraywrite));
@@ -98,7 +98,7 @@ mkobjectftree(Object *obj, File *root)
 	obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666,
 	  fauxalloc(obj, nil, textread, textwrite));
 
-	obj->ffont  = createfile(obj->dir, "font",  "richterm", 0666,
+	obj->ffont  = createfile(obj->dir, "font",  "richterm", DMAPPEND|0666,
 	  fauxalloc(obj, nil, fontread, fontwrite));
 
 	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666,
