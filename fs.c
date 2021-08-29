@@ -15,6 +15,7 @@ File *cons, *consctl, *ctl, *menu, *new, *text;
 Object *newobj;
 Reqqueue *rq;
 
+void arrayopen(Req *);
 void arrayread(Req *);
 void arraywrite(Req *);
 void consread(Req *);
@@ -30,6 +31,7 @@ void fs_open(Req *);
 void fs_read(Req *);
 void fs_write(Req *);
 void imageclose(Fid *);
+void newopen(Req *);
 void newread(Req *);
 void textread(Req *);
 void textwrite(Req *);
@@ -53,7 +55,7 @@ initfs(char *srvname)
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	fsroot = srv.tree->root;
 	new = createfile(fsroot, "new", "richterm", 0444, 
-		fauxalloc(nil, nil, nil, newread, nil, nil));
+		fauxalloc(nil, nil, newopen, newread, nil, nil));
 	ctl = createfile(fsroot, "ctl", "richterm", DMAPPEND|0666, 
 		fauxalloc(nil, nil, nil, ctlread, ctlwrite, nil));
 	text = createfile(fsroot, "text", "richterm", 0444, 
@@ -179,16 +181,10 @@ fs_destroyfid(Fid *fid)
 void
 fs_open(Req *r)
 {
-	if (r->fid->omode && OTRUNC) {
-//		if ((r->fid->file->aux != nil) && (((Faux *)r->fid->file->aux)->data != nil))
-//			((Faux *)r->fid->file->aux)->data->count = 0;
-	}
-	if (r->fid->file == new) {
-		newobj = objectcreate();
-		mkobjectftree(newobj, fsroot);
-		objinsertbeforelast(newobj);
-	}
-	respond(r, nil);
+	Faux *aux;
+	aux = r->fid->file->aux;
+	if ((aux != nil) && (aux->open != nil)) aux->open(r);
+	else respond(r, nil);
 }
 
 void
@@ -226,6 +222,13 @@ delayedread(Req *r)
 		if (aux->read != nil) aux->read(r);
 		else respond(r, "no read");
 	} else respond(r, "fs_read: f->aux is nil");
+}
+
+void
+arrayopen(Req *r)
+{
+	
+	respond(r, nil);
 }
 
 void
@@ -406,6 +409,15 @@ ctlwrite(Req *r)
 	free(buf);
 	r->ofcall.count = r->ifcall.count;
 	respond(r, ret);
+}
+
+void
+newopen(Req *r)
+{
+	newobj = objectcreate();
+	mkobjectftree(newobj, fsroot);
+	objinsertbeforelast(newobj);
+	respond(r, nil);
 }
 
 void
