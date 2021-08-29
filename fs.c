@@ -15,26 +15,24 @@ File *cons, *consctl, *ctl, *menu, *new, *text;
 Object *newobj;
 Reqqueue *rq;
 
-
-char * arrayread(Req *);
-char * arraywrite(Req *);
-char * consread(Req *);
-char * conswrite(Req *);
-char * ctlread(Req *);
-char * ctlwrite(Req *);
-char * fontread(Req *);
-char * fontwrite(Req *);
-char * newread(Req *);
-char * textread(Req *);
-char * textwrite(Req *);
+void arrayread(Req *);
+void arraywrite(Req *);
+void consread(Req *);
+void conswrite(Req *);
+void ctlread(Req *);
+void ctlwrite(Req *);
 void delayedread(Req *);
+void fontread(Req *);
+void fontwrite(Req *);
 void fs_destroyfid(Fid *);
 void fs_flush(Req *);
 void fs_open(Req *);
 void fs_read(Req *);
 void fs_write(Req *);
 void imageclose(Fid *);
-
+void newread(Req *);
+void textread(Req *);
+void textwrite(Req *);
 
 int
 initfs(char *srvname)
@@ -55,17 +53,17 @@ initfs(char *srvname)
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	fsroot = srv.tree->root;
 	new = createfile(fsroot, "new", "richterm", 0444, 
-		fauxalloc(nil, nil, newread, nil));
+		fauxalloc(nil, nil, nil, newread, nil, nil));
 	ctl = createfile(fsroot, "ctl", "richterm", DMAPPEND|0666, 
-		fauxalloc(nil, nil, ctlread, ctlwrite));
+		fauxalloc(nil, nil, nil, ctlread, ctlwrite, nil));
 	text = createfile(fsroot, "text", "richterm", 0444, 
-		fauxalloc(nil, rich.text, arrayread, nil));
+		fauxalloc(nil, rich.text, nil, arrayread, nil, nil));
 	cons = createfile(fsroot, "cons", "richterm", DMAPPEND|0666, 
-		fauxalloc(nil, nil, consread, conswrite));
+		fauxalloc(nil, nil, nil, consread, conswrite, nil));
 	consctl = createfile(fsroot, "consctl", "richterm", DMAPPEND|0666, 
-		fauxalloc(nil, nil, nil, nil));
+		fauxalloc(nil, nil, nil, nil, nil, nil));
 	menu = createfile(fsroot, "menu", "richterm", 0666, 
-		fauxalloc(nil, menubuf, arrayread, arraywrite));
+		fauxalloc(nil, menubuf, nil, arrayread, arraywrite, nil));
 	threadpostmountsrv(&srv, srvname, "/mnt/richterm", MREPL);
 	return 0;
 }
@@ -96,18 +94,29 @@ mkobjectftree(Object *obj, File *root)
 	obj->dir = createfile(root, obj->id, "richterm", DMDIR|0555, nil);
 
 	obj->ftext  = createfile(obj->dir, "text",  "richterm", 0666,
-	  fauxalloc(obj, nil, textread, textwrite));
+	  fauxalloc(obj, nil, nil, textread, textwrite, nil));
 
 	obj->ffont  = createfile(obj->dir, "font",  "richterm", DMAPPEND|0666,
-	  fauxalloc(obj, nil, fontread, fontwrite));
+	  fauxalloc(obj, nil, nil, fontread, fontwrite, nil));
 
 	obj->flink  = createfile(obj->dir, "link",  "richterm", 0666,
-	  fauxalloc(obj, obj->dlink, arrayread, arraywrite));
+	  fauxalloc(obj, obj->dlink, nil, arrayread, arraywrite, nil));
 
 	obj->fimage = createfile(obj->dir, "image", "richterm", 0666,
-	  fauxalloc(obj, obj->dimage, arrayread, arraywrite));
+	  fauxalloc(obj, obj->dimage, nil, arrayread, arraywrite, nil));
 
 	return obj;
+}
+
+Faux *
+fauxalloc(Object *obj, Array *data,
+  void (*open)(Req *), void (*read)(Req *),
+  void (*write)(Req *), void (*destroyfid)(Fid *))
+{
+	Faux *aux;
+	aux = mallocz(sizeof(Faux), 1);
+	*aux = (Faux) {obj, data, open, read, write, destroyfid};
+	return aux;
 }
 
 char *
@@ -192,16 +201,14 @@ void
 fs_write(Req *r)
 {
 	Faux *aux;
-	char *s;
 	aux = r->fid->file->aux;
 	if (aux != nil) {
 		if (aux->write != nil) {
-			s = aux->write(r);
+			aux->write(r);
 			nbsend(redrawc, &aux->obj);
 		}
-		else s = "no write";
-	} else s = "fs_write: f->aux is nil";
-	respond(r, s);
+		else respond(r, "no write");
+	} else respond(r, "fs_write: f->aux is nil");
 }
 
 void
@@ -214,16 +221,14 @@ void
 delayedread(Req *r)
 {
 	Faux *aux;
-	char *s;
 	aux = r->fid->file->aux;
 	if (aux != nil) {
-		if (aux->read != nil) s = aux->read(r);
-		else s = "no read";
-	} else s = "fs_read: f->aux is nil";
-	respond(r, s);	
+		if (aux->read != nil) aux->read(r);
+		else respond(r, "no read");
+	} else respond(r, "fs_read: f->aux is nil");
 }
 
-char *
+void
 arrayread(Req *r)
 {
 	Array *data;
@@ -233,10 +238,10 @@ arrayread(Req *r)
 	readbuf(r, data->p, data->count);
 	qunlock(data->l);
 	qunlock(rich.l);
-	return nil;
+	respond(r, nil);
 }
 
-char *
+void
 arraywrite(Req *r)
 {
 	long count;
@@ -255,10 +260,10 @@ arraywrite(Req *r)
 	r->ofcall.count = r->ifcall.count;
 	r->fid->file->length = data->count;
 	qunlock(rich.l);
-	return nil;
+	respond(r, nil);
 }
 
-char *
+void
 textread(Req *r)
 {
 	Faux *aux;
@@ -284,10 +289,10 @@ textread(Req *r)
 
 	qunlock(rich.text->l);
 	qunlock(rich.l);
-	return nil;
+	respond(r, nil);
 }
 
-char *
+void
 textwrite(Req *r)
 {
 	/* TODO: this is not exactly finished */
@@ -314,10 +319,10 @@ textwrite(Req *r)
 
 	free(buf);
 	r->ofcall.count = r->ifcall.count;
-	return nil;
+	respond(r, nil);
 }
 
-char *
+void
 fontread(Req *r)
 {
 	Faux *aux;
@@ -325,10 +330,10 @@ fontread(Req *r)
 	aux = r->fid->file->aux;
 	readstr(r, aux->obj->font->name);
 	qunlock(rich.l);
-	return nil;
+	respond(r, nil);
 }
 
-char *
+void
 fontwrite(Req *r)
 {
 	char buf[4096], *bp;
@@ -347,10 +352,10 @@ fontwrite(Req *r)
 	aux->obj->font = getfont(fonts, bp);
 	qunlock(rich.l);
 	r->ofcall.count = r->ifcall.count;
-	return nil;
+	respond(r, nil);
 }
 
-char *
+void
 consread(Req *r)
 {
 	if (consbuf == nil) recv(consc, &consbuf);
@@ -362,10 +367,10 @@ consread(Req *r)
 		arrayfree(consbuf);
 		consbuf = nil;
 	}
-	return nil;
+	respond(r, nil);
 }
 
-char *
+void
 conswrite(Req *r)
 {
 	Array *a;
@@ -373,10 +378,10 @@ conswrite(Req *r)
 	arraygrow(a, r->ifcall.count, r->ifcall.data);
 	nbsend(insertc, &a);
 	r->ofcall.count = r->ifcall.count;
-	return nil;
+	respond(r, nil);
 }
 
-char *
+void
 ctlread(Req *r)
 {
 	if (ctlbuf == nil) recv(ctlc, &ctlbuf);
@@ -388,10 +393,10 @@ ctlread(Req *r)
 		arrayfree(ctlbuf);
 		ctlbuf = nil;
 	}
-	return nil;
+	respond(r, nil);
 }
 
-char *
+void
 ctlwrite(Req *r)
 {
 	char *ret, *buf;
@@ -400,14 +405,14 @@ ctlwrite(Req *r)
 	ret = ctlcmd(buf);
 	free(buf);
 	r->ofcall.count = r->ifcall.count;
-	return ret;
+	respond(r, ret);
 }
 
-char *
+void
 newread(Req *r)
 {
 	readstr(r, newobj->id);
-	return nil;
+	respond(r, nil);
 }
 
 void

@@ -410,15 +410,6 @@ scroll(Point p, Rich *r)
 	nbsend(redrawc, nil);
 }
 
-Faux *
-fauxalloc(Object *obj, Array *data, char * (*read)(Req *), char * (*write)(Req *))
-{
-	Faux *aux;
-	aux = mallocz(sizeof(Faux), 1);
-	*aux = (Faux) {obj, data, read, write};
-	return aux;
-}
-
 Object *
 objectcreate(void)
 {

@@ -81,8 +81,10 @@ typedef struct Faux Faux;
 struct Faux {
 	Object *obj;
 	Array *data;
-	char * (*read)(Req *);
-	char * (*write)(Req *);
+	void (*open)(Req *);
+	void (*read)(Req *);
+	void (*write)(Req *);
+	void (*destroyfid)(Fid *);
 };
 
-Faux * fauxalloc(Object *, Array *, char * (*)(Req *), char * (*)(Req *));
+Faux * fauxalloc(Object *, Array *, void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Fid *));
