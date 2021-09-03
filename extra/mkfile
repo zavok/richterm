@@ -1,5 +1,6 @@
 </$objtype/mkfile
 
-TARG=mdprint
+TARG=mdprint\
+	Dir\
 
 </sys/src/cmd/mkmany
