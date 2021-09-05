@@ -889,17 +889,17 @@ rusergen(int f)
 	ps = menubuf->p;
 	for (k = 0, i = 0; (k != f) && (i < menubuf->count); i++) {
 		if (menubuf->p[i] == '\n') {
-			ps = menubuf->p + i;
+			ps = menubuf->p + i + 1;
 			k++;
 		}
 	}
 	if (k != f) return nil;
-	ps++; i++;
+	i++;
 	for (pe = ps; i < menubuf->count; i++, pe++) {
 		if (*pe == '\n') break;
 	}
 	if (pe == '\0') return nil;
 	if (ps == pe) return nil;
-	memcpy(genbuf, ps, pe - ps - 1);
+	memcpy(genbuf, ps, pe - ps);
 	return genbuf;
 }
