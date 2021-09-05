@@ -1,0 +1,51 @@
+#!/bin/rc
+
+rroot=/mnt/richterm
+
+fn clear {
+	echo clear > $rroot/ctl
+}
+
+fn _exit {
+	clear
+	echo -n > $rroot/menu
+	exit
+}
+
+fn menu {
+	switch ($1) {
+	case 'Exit'; _exit
+	}
+}
+
+fn link {
+	f=`{file $1}
+	if (~ $f(2) 'directory') {cd $1; clear; Dir}
+	if not plumb $1
+}
+
+rfork
+
+
+bind -a bin/$cputype /bin
+
+cat > $rroot/menu <<EOF
+----
+Exit
+EOF
+
+clear
+
+Dir
+
+event=''
+
+while ( { event=`{read $rroot/ctl} } ) {
+	if (test -z $"event) exit
+	type=$event(1)
+	action=$event(2)
+	switch($type) {
+	case 'menu'; menu $action
+	case 'link'; link $action
+	}
+}
