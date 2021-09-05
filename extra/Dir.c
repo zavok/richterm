@@ -41,31 +41,32 @@ main(int argc, char **argv)
 	int fd;
 	long i, n;
 	Dir *dp, *dbuf;
-	char *path, buf[4096];
+	char *path, buf[4096], *id, *spacer;
 	path = getwd(buf, sizeof(buf));
 	if (argc == 2) path = argv[1];
 	fd = open(path, OREAD);
 	if (fd < 0) sysfatal("%r");
 	dp = dirfstat(fd);
 	if (dp == nil) sysfatal("%r");
+
+	id = getnewid();
+	rprint(id, "text", "../\n");
+	rprint(id, "link", "..");
+	free(id);
+
 	if (dp->mode & DMDIR) {
 		dbuf = mallocz(DIRMAX, 1);
 		n = dirreadall(fd, &dbuf);
 		for (i = 0; i < n; i++) {
-			char *id, *link, *text;
+			char *label;
+			spacer = "";
+			if (dbuf[i].mode & DMEXEC) spacer = "*";
+			if (dbuf[i].mode & DMDIR) spacer = "/";
+			label = smprint("%s%s\n", dbuf[i].name, spacer);
 			id = getnewid();
-			text = smprint("%s/%s/text", rroot, id);
-			link = smprint("%s/%s/link", rroot, id);
-			rprint(id, "text", dbuf[i].name);
+			rprint(id, "text", label);
 			rprint(id, "link", dbuf[i].name);
 			free(id);
-			free(link);
-			free(text);
-			id = getnewid();
-			text = smprint("%s/%s/text", rroot, id);
-			rprint(id, "text", "\n");
-			free(id);
-			free(text);
 		}
 	} else sysfatal("not a directory");
 }
