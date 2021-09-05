@@ -3,4 +3,6 @@
 TARG=mdprint\
 	Dir\
 
+BIN=../bin/$cputype
+
 </sys/src/cmd/mkmany
