@@ -1,6 +1,7 @@
 </$objtype/mkfile
 
-TARG=mdprint\
+TARG=\
+	Markdown\
 	Dir\
 
 BIN=../bin/$cputype
