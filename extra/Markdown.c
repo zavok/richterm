@@ -3,14 +3,38 @@
 #include <bio.h>
 #include <String.h>
 
-char * newobj(void);
-void parse(char);
-void purge(void);
-int setfield(char *, char *, char *);
+char *data;
+long count;
 
-int newblock = 1;
-int header = 0;
-String *bbuf;
+/* Lexer */
+
+enum {
+	TEOF = 0,
+	TCHAR,
+};
+
+enum {
+	SEOF = 0,
+	SDEFAULT,
+};
+
+typedef struct Token Token;
+struct Token {
+	int type;
+	char c;
+};
+
+int state;
+long p;
+Token *tokens;
+
+char consume(void);
+char peek(void);
+
+/* Rich */
+
+char * newobj(void);
+int setfield(char *, char *, char *);
 
 char *root = "/mnt/richterm";
 
@@ -18,72 +42,21 @@ void
 main(int argc, char **argv)
 {
 	int fd;
-	Biobuf *bp;
-	char c;
+	char buf[1024];
+	long n;
 
 	if (argc > 1) {
 		if ((fd = open(argv[1], OREAD)) < 0)
 			sysfatal("can't open %s, %r", argv[1]);
 	} else fd = 0;
-	bp = Bfdopen(fd, OREAD);
-	bbuf = s_new();
-
-	while ((c = Bgetc(bp)) >= 0) {
-		parse(c);
+	count = 0;
+	data = nil;
+	while ((n = read(fd, buf, sizeof(buf))) > 0) {
+		data = realloc(data, count + n);
+		memcpy(data + count, buf, n);
+		count += n;
 	}
-}
-
-void
-parse(char c)
-{
-	int purgeblock;
-
-	purgeblock = 0;
-
-	if (newblock != 0) {
-		switch(c) {
-		case '#':
-			header++;
-			break;
-		case ' ':
-			if (header == 0) newblock = 0;
-			break;
-		default:
-			newblock = 0;
-		}
-	} 
-	if (newblock == 0){
-		bbuf = s_nappend(bbuf, &c, 1);
-		if (c == '\n') purgeblock = 1;
-	}
-	if (purgeblock != 0) {
-		purge();
-		newblock = 1;
-		header = 0;
-		/* ... */
-		bbuf = s_reset(bbuf);
-	}
-}
-
-void
-purge(void)
-{
-	char *id;
-
-	id = newobj();
-	setfield(id, "text", s_to_c(bbuf));
-	switch (header) {
-	case 1:
-		setfield(id, "font", "/lib/font/bit/lucida/unicode.20.font");
-		break;
-	case 2:
-		setfield(id, "font", "/lib/font/bit/lucida/unicode.14.font");
-		break;
-	case 3:
-		setfield(id, "font", "/lib/font/bit/lucida/unicode.12.font");
-		break;
-	}
-	free(id);
+	if (n < 0) sysfatal("%r");
 }
 
 int
