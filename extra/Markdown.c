@@ -11,25 +11,36 @@ long count;
 enum {
 	TEOF = 0,
 	TCHAR,
+	THEADER,
 };
 
 enum {
 	SEOF = 0,
+	SNEW,
 	SDEFAULT,
+	SHEADER,
+	SSPACE,
 };
 
 typedef struct Token Token;
 struct Token {
 	int type;
+	int header;
 	char c;
 };
 
 int state;
 long p;
-Token *tokens;
+Token tok, *tokens;
 
+int lex(void);
+int lnew(void);
+int ldefault(void);
+int lheader(void);
+int lspace(void);
 char consume(void);
-char peek(void);
+char peek(int);
+void emit(void);
 
 /* Rich */
 
@@ -57,6 +68,120 @@ main(int argc, char **argv)
 		count += n;
 	}
 	if (n < 0) sysfatal("%r");
+
+	state = SNEW;
+	while(state != SEOF) {
+		state = lex();
+	}
+}
+
+int
+lex(void)
+{
+	switch(state) {
+	case SNEW: return lnew();
+	case SDEFAULT: return ldefault();
+	case SHEADER: return lheader();
+	case SSPACE: return lspace();
+	}
+	fprint(2, "lex err\n");
+	return SEOF;
+}
+
+int
+lnew(void)
+{
+	char c;
+	c = peek(0);
+	switch (c){
+	case '#':
+		tok.type = THEADER;
+		return SHEADER;
+	default:
+		return SDEFAULT;
+	}
+}
+
+int
+ldefault(void)
+{
+	int newstate;
+	tok.c = consume();
+	switch (tok.c) {
+	case 0:
+		tok.type = TEOF;
+		emit();
+		newstate = SEOF;
+		break;
+	case '\n':
+	case ' ':
+		tok.type = TCHAR;
+		tok.c = ' ';
+		emit();
+		newstate = SSPACE;
+		break;
+	default:
+		tok.type = TCHAR;
+		newstate = SDEFAULT;
+		emit();
+	}
+	return newstate;
+}
+
+int
+lheader(void)
+{
+	char c;
+	c = peek(0);
+	switch (c){
+	case '#':
+		tok.header++;
+		consume();
+		return SHEADER;
+	case '\n':
+		consume();
+		emit();
+		return SNEW;
+	default:
+		consume();
+		return SHEADER;
+	}
+}
+
+int
+lspace(void)
+{
+	char c;
+	c = peek(0);
+	switch (c) {
+	case ' ':
+	case '\n':
+		consume();
+		return SSPACE;
+	default:
+		return SDEFAULT;
+	}
+}
+
+char
+consume(void)
+{
+	if (p < count) return data[p++];
+	else return 0;
+}
+
+char
+peek(int k)
+{
+	if (p + k < count) return data[p + k];
+	else return 0;
+}
+
+void
+emit(void)
+{
+	print("[%d %c]", tok.type, tok.c);
+	/* TODO: should add tokens to tokens array */
 }
 
 int
