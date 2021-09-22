@@ -10,37 +10,38 @@ long count;
 
 enum {
 	TEOF = 0,
-	TCHAR,
-	THEADER,
-};
-
-enum {
-	SEOF = 0,
-	SNEW,
-	SDEFAULT,
-	SHEADER,
-	SSPACE,
+	TH0, TH1, TH2, TH3, TH4, TH5, TH6,
+	TWORD, TWBRK, TPBRK,
+	TUNDEF = -1,
 };
 
 typedef struct Token Token;
 struct Token {
 	int type;
-	int header;
 	char c;
+	String *s;
 };
 
-int state;
+void (*lex)(void);
 long p;
 Token tok, *tokens;
+int oldtype;
 
-int lex(void);
-int lnew(void);
-int ldefault(void);
-int lheader(void);
-int lspace(void);
+void lnewline(void);
+
+void lheader(void);
+void lhspace(void);
+void lhword(void);
+
+void lword(void);
+void lspace(void);
+
 char consume(void);
 char peek(int);
 void emit(void);
+
+void emitwbrk(void);
+void emitpbrk(void);
 
 /* Rich */
 
@@ -69,86 +70,73 @@ main(int argc, char **argv)
 	}
 	if (n < 0) sysfatal("%r");
 
-	state = SNEW;
-	while(state != SEOF) {
-		state = lex();
+	tok.s = s_new();
+	tok.type = TUNDEF;
+	oldtype = TUNDEF;
+	lex = lnewline;
+	while(lex != nil) {
+		lex();
 	}
+	tok.type = TEOF;
+	emit();
 }
 
-int
-lex(void)
-{
-	switch(state) {
-	case SNEW: return lnew();
-	case SDEFAULT: return ldefault();
-	case SHEADER: return lheader();
-	case SSPACE: return lspace();
-	}
-	fprint(2, "lex err\n");
-	return SEOF;
-}
-
-int
-lnew(void)
+void
+lnewline(void)
 {
 	char c;
 	c = peek(0);
 	switch (c){
-	case '#':
-		tok.type = THEADER;
-		return SHEADER;
-	default:
-		return SDEFAULT;
-	}
-}
-
-int
-ldefault(void)
-{
-	int newstate;
-	tok.c = consume();
-	switch (tok.c) {
 	case 0:
-		tok.type = TEOF;
-		emit();
-		newstate = SEOF;
+		lex = nil;
 		break;
 	case '\n':
-	case ' ':
-		tok.type = TCHAR;
-		tok.c = ' ';
-		emit();
-		newstate = SSPACE;
+		consume();
+		emitpbrk();
+		tok.type = TUNDEF;
+		break;
+	case '#':
+		lex = lheader;
+		consume();
+		tok.type = TH0;
 		break;
 	default:
-		tok.type = TCHAR;
-		newstate = SDEFAULT;
-		emit();
+		lex = lword;
+		emitwbrk();
+		tok.type = TWORD;
 	}
-	return newstate;
 }
 
-int
-lheader(void)
+void
+lword(void)
 {
 	char c;
 	c = peek(0);
-	switch (c){
-	case '#':
-		tok.header++;
-		consume();
-		return SHEADER;
+	switch (c) {
+	case 0:
+		lex = nil;
+		emit();
+		break;
 	case '\n':
+		lex = lnewline;
 		consume();
 		emit();
-		return SNEW;
-	default:
+		tok.type = TUNDEF;
+		break;
+	case ' ':
+		lex = lspace;
 		consume();
-		return SHEADER;
+		emit();
+		emitwbrk();
+		tok.type = TWORD;
+		break;
+	default:
+		s_putc(tok.s, c);
+		consume();
 	}
 }
 
-int
+void
 lspace(void)
 {
 	char c;
@@ -156,10 +144,83 @@ lspace(void)
 	switch (c) {
 	case ' ':
 	case '\n':
+		lex = lheader;
 		consume();
-		return SSPACE;
+		break;
 	default:
-		return SDEFAULT;
+		lex = lword;
+		tok.type = TWORD;
+	}
+}
+
+void
+lheader(void)
+{
+	char c;
+	if ((tok.type >= TH0) && (tok.type < TH6)) tok.type++;
+	else {
+		/* an error */
+		lex = nil;
+		return;
+	}
+	c = peek(0);
+	switch (c){
+	case '#':
+		consume();
+		lex = lheader;
+		break;
+	case '\n':
+		/* an error */
+		lex = nil;
+		break;
+	case ' ':
+		consume();
+		lex = lhspace;
+		break;
+	default:
+		/* an error */
+		lex = nil;
+	}
+}
+
+void
+lhspace(void)
+{
+	char c;
+	c = peek(0);
+	switch(c) {
+	case 0:
+	case '\n':
+		lex = nil;
+	case ' ':
+		consume();
+		break;
+	default:
+		lex = lhword;
+	}
+}
+
+void
+lhword(void)
+{
+	char c;
+	c = peek(0);
+	switch(c) {
+	case 0:
+		lex = nil;
+	case ' ':
+		s_putc(tok.s, c);
+		consume();
+		lex = lhspace;
+		break;
+	case '\n':
+		consume();
+		emit();
+		lex = lnewline;
+		break;
+	default:
+		s_putc(tok.s, c);
+		consume();
 	}
 }
 
@@ -180,8 +241,33 @@ peek(int k)
 void
 emit(void)
 {
-	print("[%d %c]", tok.type, tok.c);
-	/* TODO: should add tokens to tokens array */
+	s_terminate(tok.s);
+	print("[%d] %s\n", tok.type, s_to_c(tok.s));
+	
+	/* TODO: should add token to tokens array */
+	
+	/* cleaning up tok state */
+	s_reset(tok.s);
+	oldtype = tok.type;
+	tok.type = TUNDEF;
+}
+
+void
+emitwbrk(void)
+{
+	if (oldtype == TWORD) {
+		tok.type = TWBRK;
+		emit();
+	}
+}
+
+void
+emitpbrk(void)
+{
+	if (oldtype != TPBRK) {
+		tok.type = TPBRK;
+		emit();
+	}
 }
 
 int
