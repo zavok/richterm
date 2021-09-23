@@ -23,7 +23,7 @@ struct Token {
 };
 
 void (*lex)(void);
-long p;
+long p, tokn;
 Token tok, *tokens;
 int oldtype;
 
@@ -48,6 +48,8 @@ void emitpbrk(void);
 char * newobj(void);
 int setfield(char *, char *, char *);
 
+void printtoken(Token);
+
 char *root = "/mnt/richterm";
 
 void
@@ -55,7 +57,7 @@ main(int argc, char **argv)
 {
 	int fd;
 	char buf[1024];
-	long n;
+	long i, n;
 
 	if (argc > 1) {
 		if ((fd = open(argv[1], OREAD)) < 0)
@@ -70,6 +72,8 @@ main(int argc, char **argv)
 	}
 	if (n < 0) sysfatal("%r");
 
+	tokens = nil;
+	tokn = 0;
 	tok.s = s_new();
 	tok.type = TUNDEF;
 	oldtype = TUNDEF;
@@ -77,8 +81,11 @@ main(int argc, char **argv)
 	while(lex != nil) {
 		lex();
 	}
+	emitpbrk();
 	tok.type = TEOF;
 	emit();
+
+	for (i = 0; i < tokn; i++) printtoken(tokens[i]);
 }
 
 void
@@ -216,6 +223,7 @@ lhword(void)
 	case '\n':
 		consume();
 		emit();
+		emitpbrk();
 		lex = lnewline;
 		break;
 	default:
@@ -242,12 +250,12 @@ void
 emit(void)
 {
 	s_terminate(tok.s);
-	print("[%d] %s\n", tok.type, s_to_c(tok.s));
-	
-	/* TODO: should add token to tokens array */
-	
-	/* cleaning up tok state */
-	s_reset(tok.s);
+
+	tokens = realloc(tokens, (tokn + 1) * sizeof(Token));
+	tokens[tokn] = tok;
+	tokn++;
+
+	tok.s = s_new();
 	oldtype = tok.type;
 	tok.type = TUNDEF;
 }
@@ -297,4 +305,31 @@ newobj(void)
 	read(fd, buf, 256);
 	close(fd);
 	return buf;
+}
+
+void
+printtoken(Token tok)
+{
+	char *font, *text, *id;
+	font = nil;
+	text = s_to_c(tok.s);
+	switch(tok.type) {
+	case TH1:
+		font = "/lib/font/bit/lucida/unicode.32.font";
+		break;
+	case TH2:
+		font = "/lib/font/bit/lucida/unicode.28.font";
+		break;
+	case TWORD:
+		break;
+	case TWBRK:
+		text = " ";
+		break;
+	case TPBRK:
+		text = "\n\n";
+		break;
+	}
+	id = newobj();
+	if (text != nil) setfield(id, "text", text);
+	if (font != nil) setfield(id, "font", font);
 }
