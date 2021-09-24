@@ -118,7 +118,7 @@ threadmain(int argc, char **argv)
 	Iscrollbar = allocimage(
 	  display, Rect(0,0,1,1), screen->chan, 1, 0x999999FF);
 	Inormbg = allocimage(
-	  display, Rect(0,0,1,1), screen->chan, 1, 0xDDDDDDFF);
+	  display, Rect(0,0,1,1), screen->chan, 1, DWhite);
 	Iselbg = allocimage(
 	  display, Rect(0,0,1,1), screen->chan, 1, 0xBBBBBBFF);
 	Ilink = allocimage(
