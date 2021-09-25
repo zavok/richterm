@@ -12,6 +12,7 @@ enum {
 	TEOF = 0,
 	TH0, TH1, TH2, TH3, TH4, TH5, TH6,
 	TWORD, TWBRK, TPBRK,
+	TLINK,
 	TUNDEF = -1,
 };
 
@@ -32,6 +33,8 @@ void lnewline(void);
 void lheader(void);
 void lhspace(void);
 void lhword(void);
+void lhline(void);
+void lsubhline(void);
 
 void lword(void);
 void lspace(void);
@@ -85,7 +88,10 @@ main(int argc, char **argv)
 	tok.type = TEOF;
 	emit();
 
-	for (i = 0; i < tokn; i++) printtoken(tokens[i]);
+	for (i = 0; i < tokn; i++) {
+		if (tokens[i].type == TEOF) break;
+		printtoken(tokens[i]);
+	}
 }
 
 void
@@ -106,6 +112,14 @@ lnewline(void)
 		lex = lheader;
 		consume();
 		tok.type = TH0;
+		break;
+	case '=':
+		lex = lhline;
+		consume();
+		break;
+	case '-':
+		lex =lsubhline;
+		consume();
 		break;
 	default:
 		lex = lword;
@@ -132,10 +146,11 @@ lword(void)
 		break;
 	case ' ':
 		lex = lspace;
+		s_putc(tok.s, c);
 		consume();
-		emit();
-		emitwbrk();
-		tok.type = TWORD;
+		//emit();
+		//emitwbrk();
+		//tok.type = TWORD;
 		break;
 	default:
 		s_putc(tok.s, c);
@@ -150,13 +165,17 @@ lspace(void)
 	c = peek(0);
 	switch (c) {
 	case ' ':
-	case '\n':
-		lex = lheader;
 		consume();
+		break;
+	case '\n':
+		tok.type = TWORD;
+		lex = lnewline;
+		consume();
+		emit();
+		tok.type = TUNDEF;
 		break;
 	default:
 		lex = lword;
-		tok.type = TWORD;
 	}
 }
 
@@ -215,6 +234,7 @@ lhword(void)
 	switch(c) {
 	case 0:
 		lex = nil;
+		break;
 	case ' ':
 		s_putc(tok.s, c);
 		consume();
@@ -229,6 +249,58 @@ lhword(void)
 	default:
 		s_putc(tok.s, c);
 		consume();
+	}
+}
+
+void
+lhline(void)
+{
+	char c;
+	c = peek(0);
+	switch (c) {
+	case 0:
+		lex = nil;
+		break;
+	case '=':
+		consume();
+		s_putc(tok.s, c);
+		break;
+	case '\n':
+		lex = lnewline;
+		consume();
+		tokens[tokn - 1].type = TH1;
+		break;
+	default:
+		lex = lword;
+		consume();
+		tok.type = TWORD;
+		emit();
+	};
+}
+
+void
+lsubhline(void)
+{
+	char c;
+	c = peek(0);
+	switch (c){
+	case 0:
+		lex = nil;
+		break;
+	case '-':
+		consume();
+		s_putc(tok.s, c);
+		break;
+	case '\n':
+		lex = lnewline;
+		tokens[tokn - 1].type = TH2;
+		consume();
+		break;
+	default:
+		lex = lword;
+		tok.type = TWORD;
+		consume();
+		emit();
 	}
 }
 
