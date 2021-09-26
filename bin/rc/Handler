@@ -12,6 +12,23 @@ fn _exit {
 	exit
 }
 
+fn ldir {
+	cd $1
+	clear
+	echo '	'^`{pwd}
+	echo
+	Dir
+}
+
+fn lmarkdown {
+	fname=`{basename $1}
+	cd `{basename -d $1}
+	clear
+	echo '	'^`{pwd}^/$fname
+	echo
+	Markdown $fname
+}
+
 fn menu {
 	switch ($1) {
 	case 'Exit'; _exit
@@ -19,13 +36,20 @@ fn menu {
 }
 
 fn link {
-	f=`{file $1}
-	if (~ $f(2) 'directory') {cd $1; clear; Dir}
-	if not plumb $1
+	switch($1) {
+	case http://*; plumb $1
+	case *.md; lmarkdown $1
+	case *.html
+		md=`{echo $1|sed 's/\.html/\.md/'}
+		if (test -r $md) lmarkdown $md
+		if not echo 'can''t open file' $1
+	case *
+		if (test -d $1) ldir $1
+		if not plumb $1
+	}
 }
 
 rfork
-
 
 bind -a bin/$cputype /bin
 
@@ -35,13 +59,14 @@ Exit
 EOF
 
 clear
-
+echo '	'^`{pwd}
+echo
 Dir
 
 event=''
 
 while ( { event=`{read $rroot/ctl} } ) {
-	if (test -z $"event) exit
+	if (test -z $"event) _exit
 	type=$event(1)
 	action=$event(2)
 	switch($type) {
