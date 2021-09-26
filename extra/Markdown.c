@@ -19,8 +19,8 @@ enum {
 typedef struct Token Token;
 struct Token {
 	int type;
-	char c;
 	String *s;
+	String *a;
 };
 
 void (*lex)(void);
@@ -38,6 +38,10 @@ void lsubhline(void);
 
 void lword(void);
 void lspace(void);
+
+void llink(void);
+void lladdr(void);
+void lltitle(void);
 
 char consume(void);
 char peek(int);
@@ -78,6 +82,7 @@ main(int argc, char **argv)
 	tokens = nil;
 	tokn = 0;
 	tok.s = s_new();
+	tok.a = s_new();
 	tok.type = TUNDEF;
 	oldtype = TUNDEF;
 	lex = lnewline;
@@ -121,10 +126,15 @@ lnewline(void)
 		lex =lsubhline;
 		consume();
 		break;
+	case '[':
+		lex = llink;
+		consume();
+		emitwbrk();
+		// emitpbrk();
+		break;
 	default:
 		lex = lword;
 		emitwbrk();
-		tok.type = TWORD;
 	}
 }
 
@@ -141,6 +151,7 @@ lword(void)
 	case '\n':
 		lex = lnewline;
 		consume();
+		tok.type = TWORD;
 		emit();
 		tok.type = TUNDEF;
 		break;
@@ -148,9 +159,12 @@ lword(void)
 		lex = lspace;
 		s_putc(tok.s, c);
 		consume();
-		//emit();
-		//emitwbrk();
-		//tok.type = TWORD;
+		break;
+	case '[':
+		lex = llink;
+		tok.type = TWORD;
+		emit();
+		consume();
 		break;
 	default:
 		s_putc(tok.s, c);
@@ -304,6 +318,69 @@ lsubhline(void)
 	}
 }
 
+void
+llink(void)
+{
+	switch (peek(0)){
+	case 0:
+		lex = nil;
+		break;
+	case ']':
+		consume();
+		if (peek(0) == '(') {
+			consume();
+			lex = lladdr;
+		} else lex = lword;
+		break;
+	default:
+		s_putc(tok.s, consume());
+	}
+}
+
+void
+lladdr(void)
+{
+	switch (peek(0)){
+	case 0:
+		lex = nil;
+		break;
+	case ')':
+		lex = lword;
+		s_terminate(tok.a);
+		consume();
+		tok.type = TLINK;
+		emit();
+		tok.type = TUNDEF;
+		break;
+	case ' ':
+		lex = lltitle;
+		consume();
+		break;
+	default:
+		s_putc(tok.a, consume());
+	}
+}
+
+void
+lltitle(void)
+{
+	/* richterm has no support for link titles,
+	 * so we're skipping it
+	 */
+
+	switch (peek(0)){
+	case 0:
+		lex = nil;
+		break;
+	case ')':
+		lex = lladdr;
+		break;
+	case ' ':
+	default:
+		consume();
+	}
+}
+
 char
 consume(void)
 {
@@ -328,6 +405,7 @@ emit(void)
 	tokn++;
 
 	tok.s = s_new();
+	tok.a = s_new();
 	oldtype = tok.type;
 	tok.type = TUNDEF;
 }
@@ -382,8 +460,9 @@ newobj(void)
 void
 printtoken(Token tok)
 {
-	char *font, *text, *id;
+	char *font, *text, *link, *id;
 	font = nil;
+	link = nil;
 	text = s_to_c(tok.s);
 	switch(tok.type) {
 	case TH1:
@@ -391,6 +470,18 @@ printtoken(Token tok)
 		break;
 	case TH2:
 		font = "/lib/font/bit/lucida/unicode.28.font";
+		break;
+	case TH3:
+		font = "/lib/font/bit/lucida/unicode.24.font";
+		break;
+	case TH4:
+		font = "/lib/font/bit/lucida/unicode.20.font";
+		break;
+	case TH5:
+		font = "/lib/font/bit/lucida/unicode.18.font";
+		break;
+	case TH6:
+		font = "/lib/font/bit/lucida/unicode.16.font";
 		break;
 	case TWORD:
 		break;
@@ -400,8 +491,14 @@ printtoken(Token tok)
 	case TPBRK:
 		text = "\n\n";
 		break;
+	case TLINK:
+		link = s_to_c(tok.a);
+		break;
+	default:
+		sysfatal("unknown token type %d for text \"%s\"", tok.type, text);
 	}
 	id = newobj();
 	if (text != nil) setfield(id, "text", text);
 	if (font != nil) setfield(id, "font", font);
+	if (link != nil) setfield(id, "link", link);
 }
