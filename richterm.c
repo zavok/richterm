@@ -50,6 +50,7 @@ void rplumb(Object *);
 
 char *ritems[] = {"Follow", "Snarf", "Plumb", nil};
 void (*rfunc[])(Object *) = {rfollow, rsnarf, rplumb, nil};
+int rsize = sizeof(ritems) / sizeof(*ritems);
 char * rgen(int);
 
 Menu rmenu = {
@@ -348,7 +349,7 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 			if ((obj != nil) && (obj->dlink->count > 0)) {
 				f = menuhit(3, mc, &rmenu, nil);
 				if (f >= 0) {
-					if (f >= sizeof(ritems) - 1) ruseract(f - 2);
+					if (f >= rsize - 1) ruseract(f - rsize + 1);
 					else rfunc[f](obj);
 				}
 			} else if (menubuf->count > 0) {
@@ -814,8 +815,8 @@ objsettext(Object *obj, char *data, long count)
 char *
 rgen(int n)
 {
-	if (n < 3) return ritems[n];
-	else return rusergen(n - 3);
+	if (n <  rsize - 1) return ritems[n];
+	else return rusergen(n - rsize + 1);
 }
 
 void
@@ -870,6 +871,10 @@ ruseract(int f)
 	Array *a;
 	char *s;
 	s = rusergen(f);
+	if (s == nil) {
+		print("ruseract: nil string\n");
+		return;
+	}
 	a = arraycreate(sizeof(char), 2048, nil);
 	arraygrow(a, 5, "menu ");
 	arraygrow(a, strlen(s), s);
