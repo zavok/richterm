@@ -111,11 +111,11 @@ lnewline(void)
 	case 0:
 		lex = nil;
 		break;
-	case '\n':
-		consume();
-		emitpbrk();
-		tok.type = TUNDEF;
-		break;
+	// case '\n':
+		// consume();
+		// emitpbrk();
+		// tok.type = TUNDEF;
+		// break;
 	case '#':
 		lex = lheader;
 		consume();
@@ -132,7 +132,7 @@ lnewline(void)
 	case '[':
 		lex = llink;
 		consume();
-		emitwbrk();
+		// emitwbrk();
 		break;
 	case '\t':
 		lex = lcodeblock;
@@ -140,7 +140,7 @@ lnewline(void)
 		break;
 	default:
 		lex = lword;
-		emitwbrk();
+		// emitwbrk();
 	}
 }
 
@@ -156,16 +156,17 @@ lword(void)
 		break;
 	case '\n':
 		lex = lnewline;
+		s_putc(tok.s, c);
 		consume();
 		tok.type = TWORD;
 		emit();
 		tok.type = TUNDEF;
 		break;
-	case ' ':
-		lex = lspace;
-		s_putc(tok.s, c);
-		consume();
-		break;
+	// case ' ':
+		// lex = lspace;
+		// s_putc(tok.s, c);
+		// consume();
+		// break;
 	case '[':
 		lex = llink;
 		tok.type = TWORD;
