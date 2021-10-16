@@ -872,7 +872,6 @@ ruseract(int f)
 	char *s;
 	s = rusergen(f);
 	if (s == nil) {
-		print("ruseract: nil string\n");
 		return;
 	}
 	a = arraycreate(sizeof(char), 2048, nil);
