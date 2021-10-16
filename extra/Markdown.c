@@ -13,6 +13,7 @@ enum {
 	TH0, TH1, TH2, TH3, TH4, TH5, TH6,
 	TWORD, TWBRK, TPBRK,
 	TLINK,
+	TCODEBLOCK,
 	TUNDEF = -1,
 };
 
@@ -42,6 +43,8 @@ void lspace(void);
 void llink(void);
 void lladdr(void);
 void lltitle(void);
+
+void lcodeblock(void);
 
 char consume(void);
 char peek(int);
@@ -130,7 +133,10 @@ lnewline(void)
 		lex = llink;
 		consume();
 		emitwbrk();
-		// emitpbrk();
+		break;
+	case '\t':
+		lex = lcodeblock;
+		consume();
 		break;
 	default:
 		lex = lword;
@@ -381,6 +387,26 @@ lltitle(void)
 	}
 }
 
+void
+lcodeblock(void)
+{
+	switch (peek(0)){
+	case 0:
+		lex = nil;
+		break;
+	case '\n':
+		lex = lnewline;
+		s_putc(tok.s, consume());
+		s_terminate(tok.s);
+		tok.type = TCODEBLOCK;
+		emit();
+		tok.type = TUNDEF;
+		break;
+	default:
+		s_putc(tok.s, consume());
+	}
+}
+
 char
 consume(void)
 {
@@ -493,6 +519,10 @@ printtoken(Token tok)
 		break;
 	case TLINK:
 		link = s_to_c(tok.a);
+		break;
+	case TCODEBLOCK:
+		text = smprint("\t%s", s_to_c(tok.s));
+		font = "/lib/font/bit/terminus/unicode.16.font";
 		break;
 	default:
 		sysfatal("unknown token type %d for text \"%s\"", tok.type, text);
