@@ -34,6 +34,16 @@ fn lmarkdown {
 	Markdown $fname
 }
 
+fn tryfile {
+	type=`{file -m $1}
+	switch ($type) {
+	case 'text/plain';
+		lmarkdown $1
+	case *;
+		plumb $1
+	}
+}
+
 fn menu {
 	switch ($1) {
 	case 'Back';
@@ -58,7 +68,7 @@ fn link {
 		if not echo 'can''t open file' $1
 	case *
 		if (test -d $1) ldir $1
-		if not plumb $1
+		if not tryfile $1
 	}
 }
 
