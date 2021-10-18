@@ -688,6 +688,8 @@ redraw(Object *)
 		drawobject(obj, &cur);
 	}
 	rich.page.max = cur;
+	if (rich.page.scroll.y > rich.page.max.y)
+		rich.page.scroll.y = rich.page.max.y;
 	qunlock(rich.l);
 }
 
