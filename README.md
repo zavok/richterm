@@ -1,6 +1,6 @@
 # Richterm
 
-Richterm is a textual interface with support different fonts, links,
+Richterm is a textual interface with support for different fonts, links,
 images and customizable menu.
 
 # Interface
