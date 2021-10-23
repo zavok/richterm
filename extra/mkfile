@@ -3,6 +3,7 @@
 TARG=\
 	Markdown\
 	Dir\
+	Gopher\
 
 BIN=../bin/$cputype
 

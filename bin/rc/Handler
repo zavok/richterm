@@ -34,6 +34,16 @@ fn lmarkdown {
 	Markdown $fname
 }
 
+fn lgopher {
+	history = ($1 $history)
+	forward = ()
+	clear
+	switch ($1) {
+	case *.md; Gopher $1 | Markdown
+	case *; Gopher $1
+	}
+}
+
 fn tryfile {
 	type=`{file -m $1}
 	switch ($type) {
@@ -61,6 +71,7 @@ fn menu {
 fn link {
 	switch($1) {
 	case http://*; plumb $1
+	case gopher://*; lgopher $1
 	case *.md; lmarkdown $1
 	case *.html
 		md=`{echo $1|sed 's/\.html/\.md/'}
@@ -84,6 +95,10 @@ clear
 Dir
 
 event=''
+
+if (test -n $"1) {
+	link $1
+}
 
 while ( { event=`{read $rroot/ctl} } ) {
 	if (test -z $"event) _exit
