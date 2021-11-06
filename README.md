@@ -48,12 +48,9 @@ In addition, Handler manages primitive link history via user menu.
 
 # Installation
 
-Proper installation and operation of richterm is work in progress.
+The usual `mk install` invocation will install richterm binary
+into /$cputype/bin directory and extra binaries and scripts into
+/sys/lib/richterm/bin/... directories
 
-For now you can run it in the following fashion:
-
-	mk
-	cd extra; mk install
-	cd ..
-	6.out bin/rc/Handler
-
+/sys/lib/richterm/bin/... will be bound over /bin by richterm
+automatically.

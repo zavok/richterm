@@ -453,7 +453,7 @@ void
 runcmd(void *args)
 {
 	char **argv = args;
-	char *cmd;
+	char *cmd, *syslib, *cputype;
 	
 	rfork(RFNAMEG);
 
@@ -461,6 +461,13 @@ runcmd(void *args)
 		sysfatal("initfs failed: %r");
 
 	bind("/mnt/richterm", "/dev/", MBEFORE);
+
+	bind("/sys/lib/richterm/bin/rc/", "/bin", MAFTER);
+	cputype = getenv("cputype");
+	syslib = smprint("/sys/lib/richterm/bin/%s/", cputype);
+	bind(syslib, "/bin", MAFTER);
+	free(cputype);
+	free(syslib);
 
 	rfork(RFFDG);
 	close(0);

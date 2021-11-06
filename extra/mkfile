@@ -5,6 +5,22 @@ TARG=\
 	Dir\
 	Gopher\
 
-BIN=../bin/$cputype
+SYSLIB=/sys/lib/richterm
+BIN=$SYSLIB/bin/$cputype
 
 </sys/src/cmd/mkmany
+
+RC=\
+	Handler\
+	clear\
+
+install:V: bindir $RC
+
+bindir:V:
+	mkdir -p $BIN
+
+$RC:V:
+	mkdir -p $SYSLIB/bin/rc
+	for (i in $RC) @{
+		cp $i $SYSLIB/bin/rc
+	}
