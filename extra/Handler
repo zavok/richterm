@@ -70,6 +70,7 @@ fn menu {
 
 fn link {
 	switch($1) {
+	case https://*; plumb $1
 	case http://*; plumb $1
 	case gopher://*; lgopher $1
 	case *.md; lmarkdown $1
@@ -89,15 +90,10 @@ Back
 Exit
 EOF
 
-clear
-Dir
+if (test -n $"1) link $1
+if not link .
 
 event=''
-
-if (test -n $"1) {
-	link $1
-}
-
 while ( { event=`{read $rroot/ctl} } ) {
 	if (test -z $"event) _exit
 	type=$event(1)
