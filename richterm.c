@@ -18,8 +18,9 @@ void send_interrupt(void);
 void runcmd(void *);
 void scroll(Point, Rich *);
 void mouse(Mousectl *, Mouse, int *);
-Object * getobj(Point xy);
-long getsel(Point pt);
+Object * getobj(Point);
+Object * minobj(Object *, Object *);
+long getsel(Point);
 
 Rich rich;
 int hostpid = -1;
@@ -90,7 +91,7 @@ threadmain(int argc, char **argv)
 	int rv[2], mmode;
 	Mouse mv;
 	Rune kv;
-	Object *ov, *obj;
+	Object *ov, *ov2, *obj;
 	Array *av;
 
 	ARGBEGIN{
@@ -188,6 +189,7 @@ threadmain(int argc, char **argv)
 			nbsend(redrawc, nil);
 			break;
 		case REDRAW:
+			while (nbrecv(redrawc, &ov2) != 0) ov = minobj(ov, ov2);
 			lockdisplay(display);
 			draw(screen, screen->r, Inormbg, nil, ZP);
 			redraw(ov);
@@ -680,7 +682,6 @@ void
 redraw(Object *)
 {
 	/* TODO: only redraw starting from arg-supplied *obj */
-	/* TODO: flush all messages in redrawc channel before proceeding */
 
 	Point cur;
 	Object *obj;
@@ -915,4 +916,19 @@ rusergen(int f)
 	if (ps == pe) return nil;
 	memcpy(genbuf, ps, pe - ps);
 	return genbuf;
+}
+
+Object *
+minobj(Object *o1, Object *o2)
+{
+	Object *op;
+	Array *objs;
+	long n;
+	objs = rich.objects;
+	for (n = 0; n < objs->count; n++) {
+		arrayget(objs, n, &op);
+		if (op == o1) return o1;
+		if (op == o2) return o2;
+	}
+	return nil;
 }
