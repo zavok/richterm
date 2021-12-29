@@ -2,6 +2,8 @@
 
 Rename Objects to Elements.
 
+Rename array to slice.
+
 Rethink color palette.
 
 Something in image drawing routines is broken, not handling it well
