@@ -94,6 +94,11 @@ threadmain(int argc, char **argv)
 	Object *ov, *ov2, *obj;
 	Array *av;
 
+	ov = nil;
+	ov2 = nil;
+	obj = nil;
+	av = nil;
+
 	ARGBEGIN{
 	case 'D':
 		chatty9p++;
@@ -191,7 +196,6 @@ threadmain(int argc, char **argv)
 		case REDRAW:
 			while (nbrecv(redrawc, &ov2) != 0) ov = minobj(ov, ov2);
 			lockdisplay(display);
-			draw(screen, screen->r, Inormbg, nil, ZP);
 			redraw(ov);
 			drawscrollbar();
 			flushimage(display, 1);
@@ -679,26 +683,54 @@ drawobject(Object *obj, Point *cur)
 }
 
 void
-redraw(Object *)
+redraw(Object *op)
 {
-	/* TODO: only redraw starting from arg-supplied *obj */
 
 	Point cur;
 	Object *obj;
+	int skip;
 	long i;
 
 	obj = nil;
 	cur = ZP;
+	skip = 0;
+
 	qlock(rich.l);
+
+	if (op == nil) draw(screen, rich.page.r, Inormbg, nil, ZP);
+	else {
+		skip = 1;
+
+		/* TODO: following will clean previous objects if selected object is not at x=0
+		 * even though I did not encounter this so far in testing.
+		 * Still, it should probably be fixed in the future.
+		 */
+
+		draw(
+		  screen,
+		  Rpt(
+		    subpt(addpt(Pt(0, op->endpt.y), rich.page.r.min), rich.page.scroll),
+		    rich.page.r.max
+		  ),
+		  Inormbg,
+		  nil, ZP
+		);
+	}
+
 	for (i = 0; i < rich.objects->count; i++) {
 		if (arrayget(rich.objects, i, &obj) == nil)
 			sysfatal("redraw: %r");
-		drawobject(obj, &cur);
+		if (obj == op) skip = 0;
+		if (skip == 0) drawobject(obj, &cur);
+		else {
+			cur = obj->endpt;
+		}
 	}
-	rich.page.max = cur;
+	rich.page.max = obj->nextlinept;
 	if (rich.page.scroll.y > rich.page.max.y)
 		rich.page.scroll.y = rich.page.max.y;
 	qunlock(rich.l);
+
 }
 
 Object *
@@ -781,6 +813,7 @@ objinsertbeforelast(Object *obj)
 	obj->prev = olast->prev;
 	if (olast->prev != nil) olast->prev->next = obj;
 	olast->prev = obj;
+	obj->endpt = olast->startpt;
 	qunlock(rich.l);
 }
 
@@ -925,6 +958,7 @@ minobj(Object *o1, Object *o2)
 	Array *objs;
 	long n;
 	objs = rich.objects;
+	if ((o1 == nil) || (o2 == nil)) return nil;
 	for (n = 0; n < objs->count; n++) {
 		arrayget(objs, n, &op);
 		if (op == o1) return o1;
