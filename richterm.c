@@ -18,9 +18,11 @@ void send_interrupt(void);
 void runcmd(void *);
 void scroll(Point, Rich *);
 void mouse(Mousectl *, Mouse, int *);
+void drawobject(Object *, Point *);
 Object * getobj(Point);
 Object * minobj(Object *, Object *);
 long getsel(Point);
+int objectisvisible(Object *);
 
 Rich rich;
 int hostpid = -1;
@@ -407,6 +409,10 @@ getfont(Array *fonts, char *name)
 void
 scroll(Point p, Rich *r)
 {
+	Object *obj;
+	Point cur;
+	long i;
+
 	if (p.x < 0) p.x = 0;
 	if (p.x > r->page.max.x) p.x = r->page.max.x;
 	if (p.y < 0) p.y = 0;
@@ -414,7 +420,33 @@ scroll(Point p, Rich *r)
 
 	r->page.scroll = p;
 
-	nbsend(redrawc, nil);
+	qlock(rich.l);
+
+	for (i = 0; i < rich.objects->count; i++) {
+		if (arrayget(rich.objects, i, &obj) == nil)
+			sysfatal("scroll: %r");
+		if (objectisvisible(obj) != 0) break;
+	}
+	cur = obj->startpt;
+
+	lockdisplay(display);
+	draw(screen, rich.page.r, Inormbg, nil, ZP);
+	
+	for (; i < rich.objects->count; i++) {
+		if (arrayget(rich.objects, i, &obj) == nil)
+			sysfatal("scroll: %r");
+		drawobject(obj, &cur);
+		if (objectisvisible(obj) == 0) break;
+	}
+
+	qunlock(rich.l);
+
+	drawscrollbar();
+	flushimage(display, 1);
+
+	unlockdisplay(display);
+
+	// nbsend(redrawc, nil);
 }
 
 Object *
@@ -701,20 +733,20 @@ redraw(Object *op)
 	else {
 		skip = 1;
 
-		/* TODO: following will clean previous objects if selected object is not at x=0
-		 * even though I did not encounter this so far in testing.
+		/* TODO: following will clean previous objects if selected
+		 * object is not at x=0, even though I did not encounter
+		 * this so far in testing.
 		 * Still, it should probably be fixed in the future.
 		 */
 
 		draw(
 		  screen,
 		  Rpt(
-		    subpt(addpt(Pt(0, op->endpt.y), rich.page.r.min), rich.page.scroll),
-		    rich.page.r.max
-		  ),
-		  Inormbg,
-		  nil, ZP
-		);
+		    subpt(
+		      addpt(Pt(0, op->endpt.y), rich.page.r.min),
+		      rich.page.scroll),
+		    rich.page.r.max),
+		  Inormbg, nil, ZP);
 	}
 
 	for (i = 0; i < rich.objects->count; i++) {
