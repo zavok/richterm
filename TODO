@@ -5,19 +5,3 @@ Rename Objects to Elements.
 Rename array to slice.
 
 Rethink color palette.
-
-Something in image drawing routines is broken, not handling it well
-when image's rectangle.min != ZP.
-
-Prevent server from locking up, See 9pqueue(2).  Probably need an
-independent queue for every blocking file.
-
-Handle OTRUNC.
-
-Fix crashes when you write into files.
-
-Simplify file handling: add Array for text to objects, and use
-standard arrayread/arraywrite.  Copy array back to global text buffer
-on destroyfid.  Do the same for fonts.
-
-Separate functions for open and destroyfid, the way read/write works now.
