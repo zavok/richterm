@@ -96,11 +96,6 @@ threadmain(int argc, char **argv)
 	Object *ov, *ov2, *obj;
 	Array *av;
 
-	ov = nil;
-	ov2 = nil;
-	obj = nil;
-	av = nil;
-
 	ARGBEGIN{
 	case 'D':
 		chatty9p++;
@@ -112,6 +107,10 @@ threadmain(int argc, char **argv)
 		usage();
 	} ARGEND
 
+	ov = nil;
+	ov2 = nil;
+	obj = nil;
+	av = nil;
 	mmode = MM_NONE;
 
 	if (initdraw(0, 0, argv0) < 0)
@@ -158,9 +157,12 @@ threadmain(int argc, char **argv)
 	redrawc = chancreate(sizeof(Object *), 8);
 	insertc = chancreate(sizeof(Array *), 8);
 
+	generatesampleelems();
+
 	resize();
 	draw(screen, screen->r, Inormbg, nil, ZP);
 	drawscrollbar();
+	drawelems();
 	flushimage(display, 1);
 
 	if(rfork(RFENVG) < 0)
@@ -168,9 +170,14 @@ threadmain(int argc, char **argv)
 	quotefmtinstall();
 	atexit(shutdown);
 
+	/*
 	pidchan = chancreate(sizeof(int), 0);
 	proccreate(runcmd, argv, 16 * 1024);
 	hostpid = recvul(pidchan);
+	*/
+
+	threadsetname("main");
+
 
 	enum {MOUSE, RESIZE, REDRAW, INSERT, KBD, AEND};
 	Alt alts[AEND + 1] = {
@@ -181,8 +188,6 @@ threadmain(int argc, char **argv)
 		{kctl->c, &kv, CHANRCV},
 		{nil, nil, CHANEND},
 	};
-
-	threadsetname("main");
 
 	for (;;) {
 		switch(alt(alts)) {
@@ -198,8 +203,10 @@ threadmain(int argc, char **argv)
 		case REDRAW:
 			while (nbrecv(redrawc, &ov2) != 0) ov = minobj(ov, ov2);
 			lockdisplay(display);
-			redraw(ov);
+			// redraw(ov);
+			draw(screen, screen->r, Inormbg, nil, ZP);
 			drawscrollbar();
+			drawelems();
 			flushimage(display, 1);
 			unlockdisplay(display);
 			break;
@@ -338,6 +345,8 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 		}
 		break;
 	case MM_TEXT:
+		break;
+
 		if (mv.buttons == 1) {
 			selstart = getsel(mv.xy);
 			selend = selstart;
@@ -368,6 +377,8 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 		}
 		break;
 	case MM_SELECT:
+		break;
+
 		if (mv.buttons == (1|2)) {
 			/* cut */
 			break;
@@ -416,7 +427,7 @@ scroll(Point p, Rich *r)
 	if (p.x < 0) p.x = 0;
 	if (p.x > r->page.max.x) p.x = r->page.max.x;
 	if (p.y < 0) p.y = 0;
-	if (p.y > r->page.max.y) p.y = r->page.max.y;
+	// if (p.y > r->page.max.y) p.y = r->page.max.y;
 
 	r->page.scroll = p;
 
@@ -429,7 +440,7 @@ scroll(Point p, Rich *r)
 	}
 	cur = obj->startpt;
 
-	lockdisplay(display);
+/*	lockdisplay(display);
 	draw(screen, rich.page.r, Inormbg, nil, ZP);
 	
 	for (; i < rich.objects->count; i++) {
@@ -438,15 +449,15 @@ scroll(Point p, Rich *r)
 		drawobject(obj, &cur);
 		if (objectisvisible(obj) == 0) break;
 	}
-
+*/
 	qunlock(rich.l);
-
+/*
 	drawscrollbar();
 	flushimage(display, 1);
 
 	unlockdisplay(display);
-
-	// nbsend(redrawc, nil);
+*/
+	nbsend(redrawc, nil);
 }
 
 Object *
@@ -997,4 +1008,230 @@ minobj(Object *o1, Object *o2)
 		if (op == o2) return o2;
 	}
 	return nil;
+}
+
+
+/* **** New Code Beyond This Point **** */
+
+Elem *
+elemcreate(int type, char *str)
+{
+	Elem *e;
+	e = malloc(sizeof(Elem));
+	e->type = type;
+	e->str = str;
+	if (str != nil) e->count = strlen(str);
+	e->aux = nil;
+	e->pos = ZP;
+	return e;
+}
+
+Array *elems;
+
+char *
+elemparse(Elem *e, char *str, long n)
+{
+	int type;
+	int count;
+	char *sp, *ep;
+
+	type = *str;
+	sp = str + 1;
+	if (n <= 1) return nil;
+	ep = memchr(sp, '\n', n - 1);
+	if (ep == nil) return nil;
+	count = ep - sp;
+	
+	e->type = type;
+	e->str = sp;
+	e->count = count;
+
+	return ep + 1;
+}
+
+void
+generatesampleelems(void)
+{
+	Elem *e, *eold;
+	char *dp, *link, *fstr;
+	Font *sfont;
+	long count;
+	char *dat =
+		".alpha beta\n"
+		"s\n"
+		"Lhttp://nsmpr.xyz\n"
+		".gamma\n"
+		"L\n"
+		"s\n"
+		"F/lib/font/bit/terminus/unicode.12.font\n"
+		".delta\n"
+		"F\n"
+		"n\n"
+		".Каким-то макаром попали к татарам амбары да бары пропали задаром\n";
+
+	elems = arraycreate(sizeof(Elem *), 128, nil);
+	eold = nil;
+	link = nil;
+	sfont = font;
+	dp = dat;
+	count = strlen(dat);
+	while (dp != nil) {
+		e = mallocz(sizeof(Elem), 1);
+		dp = elemparse(e, dp, dat + count - dp);
+
+		e->prev = eold;
+		if (eold != nil) eold->next = e;
+
+		switch (e->type) {
+		case E_LINK:
+			/* TODO: maybe use char Array instead of blindly reallocing link */
+			if (e->count > 0) {
+				link = realloc(link, e->count + 1);
+				memcpy(link, e->str, e->count);
+				link[e->count] = '\0';
+			} else link = realloc(link, 0);
+			break;
+		case E_FONT:
+			/* TODO: maybe use char Array instead of blindly reallocing fstr */
+			if (e->count > 0) {
+				fstr = mallocz(e->count + 1, 1);
+				memcpy(fstr, e->str, e->count);
+				sfont = getfont(fonts, fstr);
+				free(fstr);
+			} else sfont = font;
+			break;
+		}
+		if (link != nil) e->link = strdup(link);
+		e->font = sfont;
+		arraygrow(elems, 1, &e);
+	}
+	if (link != nil) free(link);
+}
+
+void
+drawelems(void)
+{
+	long i;
+	Point pos;
+	Elem *e;
+	pos = subpt(rich.page.r.min, rich.page.scroll); //ZP;
+	for (i = 0; i < elems->count; i++) {
+		if (arrayget(elems, i, &e) == nil)
+			sysfatal("drawelems: failed to get elem");
+		e->pos = pos;
+		pos = drawelem(e);
+	}
+}
+
+Point
+drawelem(Elem *e)
+{
+	Point (*drawp)(Elem *);
+
+	static const Point (*dtable[256])(Elem *) = {
+		[E_NOOP]  drawnoop,
+		[E_TEXT]  drawtext,
+		[E_FONT]  drawnoop,
+		[E_LINK]  drawnoop,
+		[E_IMAGE] drawnoop,
+		[E_NL]    drawnl,
+		[E_TAB]   drawnoop,
+		[E_SPACE] drawspace,
+	};
+
+	if (e == nil) sysfatal("drawelem: e is nil");
+
+	drawp = dtable[e->type];
+
+	if (drawp == nil) {
+		fprint(2, "drawelem: unknown elem type: %uhhx", e->type);
+		e->type = E_NOOP;
+		drawp = drawnoop;
+	}
+
+	return drawp(e);
+}
+
+Point
+drawtext(Elem *e)
+{
+	Point pos;
+	int i, n, s, nl;
+	Image *fg;
+	Rune *R;
+	char *sp;
+
+	fg = (e->link != nil) ? Ilink : Itext;
+
+	sp = e->str;
+	n = utfnlen(sp, e->count);
+	R = malloc(sizeof(Rune) * (n + 1));
+	R[n] = 0;
+	for (i = 0; i < n; i++) {
+		sp += chartorune(&R[i], sp);
+	}
+	pos = e->pos;
+	s = 0;
+	nl = 0;
+	while (s < n) {
+		for (i = 0; i < n - s; i++) {
+			/* if (selection start) break; */
+			/* if (selection end)   break; */
+			if (pos.x + runestringnwidth(e->font, &R[s], i) > rich.page.r.max.x) {
+				i --;
+				nl = 1;
+				break;
+			}
+		}
+		/*
+		 * if (selected) Ibg = Isel;
+		 * else Ibg = Inormbg;
+		 */
+		pos = runestringn(screen, pos, fg, ZP, e->font, &R[s], i);
+		if (nl != 0) {
+			nl = 0;
+			pos = Pt(rich.page.r.min.x, pos.y + e->font->height);
+			/*
+			 * TODO: instead of font->height, calculate line width 
+			 * from max height of every element on this line
+			 */
+		}
+		s += i;
+	}
+
+	free(R);
+	return pos;
+}
+
+Point
+drawnl(Elem *e)
+{
+	/*
+	 * if (selected) Ibg = Isel;
+	 * else Ibg = Inormbg;
+	 * draw(Ibg);
+	 */
+	return Pt(rich.page.r.min.x, e->pos.y + e->font->height);
+}
+
+Point
+drawspace(Elem *e)
+{
+	Point pos;
+	int w;
+	/*
+	 * if (selected) Ibg = Isel;
+	 * else Ibg = Inormbg;
+	 * draw(Ibg);
+	 */
+	pos = e->pos;
+	w = stringwidth(e->font, " ");
+	/* TODO: add linewrap handling */
+	return Pt(e->pos.x + w, e->pos.y);
+}
+
+Point
+drawnoop(Elem *e)
+{
+	return e->pos;
 }

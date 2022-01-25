@@ -5,3 +5,5 @@ Rename Objects to Elements.
 Rename array to slice.
 
 Rethink color palette.
+
+Rewrite drawing to use absolute coords for page.r and cursor pos

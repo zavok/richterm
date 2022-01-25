@@ -88,3 +88,53 @@ struct Faux {
 };
 
 Faux * fauxalloc(Object *, Array *, void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Fid *));
+
+
+/* **** New Code Beyond This Point **** */
+
+enum {
+	E_NOOP  = '\0',
+	E_TEXT  = '.',
+	E_FONT  = 'F',
+	E_LINK  = 'L',
+	E_IMAGE = 'I',
+	E_NL    = 'n',
+	E_TAB   = 't',
+	E_SPACE = 's'
+};
+
+typedef struct Token Token;
+
+struct Token {
+	int type;
+	char *str;
+	long count;
+};
+
+typedef struct Elem Elem;
+
+struct Elem {
+	Token;
+
+	void *aux;
+	Point pos;
+	Point nlpos;
+
+	Elem *next;
+	Elem *prev;
+	char *link;
+	Image *image;
+	Font *font;
+};
+
+extern Array *elems;
+
+Elem * elemcreate(int, char *);
+void generatesampleelems(void);
+void drawelems(void);
+Point drawelem(Elem *);
+Point drawtext(Elem *);
+Point drawnl(Elem *);
+Point drawspace(Elem *);
+Point drawnoop(Elem *);
+char * elemparse(Elem *, char *, long);
