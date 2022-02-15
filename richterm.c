@@ -161,8 +161,8 @@ threadmain(int argc, char **argv)
 
 	resize();
 	draw(screen, screen->r, Inormbg, nil, ZP);
-	drawscrollbar();
 	drawelems();
+	drawscrollbar();
 	flushimage(display, 1);
 
 	if(rfork(RFENVG) < 0)
@@ -205,8 +205,8 @@ threadmain(int argc, char **argv)
 			lockdisplay(display);
 			// redraw(ov);
 			draw(screen, screen->r, Inormbg, nil, ZP);
-			drawscrollbar();
 			drawelems();
+			drawscrollbar();
 			flushimage(display, 1);
 			unlockdisplay(display);
 			break;
@@ -222,25 +222,25 @@ threadmain(int argc, char **argv)
 			if (kv == 0x7f) shutdown(); /* delete */
 			if (kv == 0xf00e) { /* d-pad up */
 				scroll(
-				  Pt(0, rich.page.scroll.y - Dy(screen->r) / 8),
+				  Pt(0, rich.scroll - Dy(screen->r) / 8),
 				  &rich);
 				break;
 			}
 			if (kv == 0xf800) { /* d-pad down */
 				scroll(
-				  Pt(0, rich.page.scroll.y + Dy(screen->r) / 8),
+				  Pt(0, rich.scroll + Dy(screen->r) / 8),
 				  &rich);
 				break;
 			}
 			if (kv == 0xf00f) { /* page up */
 				scroll(
-				  Pt(0, rich.page.scroll.y - Dy(screen->r) / 4),
+				  Pt(0, rich.scroll - Dy(screen->r) / 4),
 				  &rich);
 				break;
 			}
 			if (kv == 0xf013) { /* page down */
 				scroll(
-				  Pt(0, rich.page.scroll.y + Dy(screen->r) / 4),
+				  Pt(0, rich.scroll + Dy(screen->r) / 4),
 				  &rich);
 				break;
 			}
@@ -304,15 +304,13 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 	}
 	if (mv.buttons == 8) {
 		scroll(
-		  subpt(rich.page.scroll,
-		  Pt(0, mv.xy.y - rich.page.r.min.y)),
+		  Pt(0, rich.scroll - (mv.xy.y - rich.page.r.min.y)),
 		  &rich);
 		return;
 	}
 	if (mv.buttons == 16) {
 		scroll(
-		  addpt(rich.page.scroll,
-		  Pt(0, mv.xy.y - rich.page.r.min.y)),
+		  Pt(0, rich.scroll + (mv.xy.y - rich.page.r.min.y)),
 		  &rich);
 		return;
 	}
@@ -328,18 +326,18 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 	case MM_SCROLLBAR:
 		if (mv.buttons == 1) {
 			scroll(
-			  subpt(rich.page.scroll,
+			  subpt(Pt(0, rich.scroll),
 			  Pt(0, mv.xy.y - rich.page.r.min.y)),
 			  &rich);
 		} else if (mv.buttons == 2) {
 			scroll(
-			  Pt(rich.page.scroll.x,
+			  Pt(0,
 			    (mv.xy.y - rich.page.r.min.y) *
 		  	    ((double)rich.page.max.y / Dy(rich.page.r))),
 		 	  &rich);
 		} else if (mv.buttons == 4) {
 			scroll(
-			  addpt(rich.page.scroll,
+			  addpt(Pt(0, rich.scroll),
 			  Pt(0, mv.xy.y - rich.page.r.min.y)),
 			  &rich);
 		}
@@ -420,44 +418,36 @@ getfont(Array *fonts, char *name)
 void
 scroll(Point p, Rich *r)
 {
-	Object *obj;
-	Point cur;
-	long i;
-
-	if (p.x < 0) p.x = 0;
-	if (p.x > r->page.max.x) p.x = r->page.max.x;
 	if (p.y < 0) p.y = 0;
-	// if (p.y > r->page.max.y) p.y = r->page.max.y;
+	if (p.y > r->max) p.y = r->max;
 
-	r->page.scroll = p;
+	r->scroll = p.y;
 
 	qlock(rich.l);
-
-	for (i = 0; i < rich.objects->count; i++) {
-		if (arrayget(rich.objects, i, &obj) == nil)
-			sysfatal("scroll: %r");
-		if (objectisvisible(obj) != 0) break;
-	}
-	cur = obj->startpt;
-
-/*	lockdisplay(display);
-	draw(screen, rich.page.r, Inormbg, nil, ZP);
-	
-	for (; i < rich.objects->count; i++) {
-		if (arrayget(rich.objects, i, &obj) == nil)
-			sysfatal("scroll: %r");
-		drawobject(obj, &cur);
-		if (objectisvisible(obj) == 0) break;
-	}
-*/
+	// update elements y positions ???
 	qunlock(rich.l);
-/*
-	drawscrollbar();
-	flushimage(display, 1);
 
-	unlockdisplay(display);
-*/
 	nbsend(redrawc, nil);
+}
+
+void
+drawscrollbar(void)
+{
+	double D;
+	Rectangle rs;
+	D =  (double)rich.max / (double)Dy(rich.page.r);
+	if (D != 0) {
+		rs = rectaddpt(Rect(
+		  0,  rich.scroll / D,
+		  11, (rich.scroll + Dy(rich.page.r)) / D
+		), rich.page.rs.min);
+	} else {
+		rs = rich.page.rs;
+		rs.max.x--;
+	};
+
+	draw(screen, rich.page.rs, Iscrollbar, nil, ZP);
+	draw(screen, rs, Inormbg, nil, ZP);
 }
 
 Object *
@@ -479,24 +469,6 @@ objectfree(Object *obj)
 	arrayfree(obj->dimage);
 }
 
-void
-drawscrollbar(void)
-{
-	double D;
-	Rectangle r;
-	D =  (double)rich.page.max.y / (double)Dy(rich.page.r);
-	if (D != 0) {
-		r = rectaddpt(Rect(
-		  0,  rich.page.scroll.y / D,
-		  11, (rich.page.scroll.y + Dy(rich.page.r)) / D
-		), rich.page.rs.min);
-	} else {
-		r = rich.page.rs;
-		r.max.x--;
-	};
-	draw(screen, rich.page.rs, Iscrollbar, nil, ZP);
-	draw(screen, r, Inormbg, nil, ZP);
-}
 
 void
 runcmd(void *args)
@@ -1010,21 +982,7 @@ minobj(Object *o1, Object *o2)
 	return nil;
 }
 
-
 /* **** New Code Beyond This Point **** */
-
-Elem *
-elemcreate(int type, char *str)
-{
-	Elem *e;
-	e = malloc(sizeof(Elem));
-	e->type = type;
-	e->str = str;
-	if (str != nil) e->count = strlen(str);
-	e->aux = nil;
-	e->pos = ZP;
-	return e;
-}
 
 Array *elems;
 
@@ -1049,6 +1007,23 @@ elemparse(Elem *e, char *str, long n)
 	return ep + 1;
 }
 
+char *sampledata =
+	".alpha\n"
+	"s\n"
+	".beta\n"
+	"s\n"
+	"Lhttp://nsmpr.xyz\n"
+	".gamma\n"
+	"L\n"
+	"s\n"
+	"Lhttp://9front.org\n"
+	"F/lib/font/bit/terminus/unicode.12.font\n"
+	".delta\n"
+	"L\n"
+	"F\n"
+	"n\n"
+	".Каким-то макаром попали к татарам амбары да бары пропали задаром\n";
+
 void
 generatesampleelems(void)
 {
@@ -1056,28 +1031,18 @@ generatesampleelems(void)
 	char *dp, *link, *fstr;
 	Font *sfont;
 	long count;
-	char *dat =
-		".alpha beta\n"
-		"s\n"
-		"Lhttp://nsmpr.xyz\n"
-		".gamma\n"
-		"L\n"
-		"s\n"
-		"F/lib/font/bit/terminus/unicode.12.font\n"
-		".delta\n"
-		"F\n"
-		"n\n"
-		".Каким-то макаром попали к татарам амбары да бары пропали задаром\n";
 
 	elems = arraycreate(sizeof(Elem *), 128, nil);
-	eold = nil;
+	e = nil;
 	link = nil;
 	sfont = font;
-	dp = dat;
-	count = strlen(dat);
+	dp = sampledata;
+	count = strlen(sampledata);
 	while (dp != nil) {
+		eold = e;
 		e = mallocz(sizeof(Elem), 1);
-		dp = elemparse(e, dp, dat + count - dp);
+		dp = elemparse(e, dp, sampledata + count - dp);
+		if (dp == nil) break;
 
 		e->prev = eold;
 		if (eold != nil) eold->next = e;
@@ -1114,13 +1079,17 @@ drawelems(void)
 	long i;
 	Point pos;
 	Elem *e;
-	pos = subpt(rich.page.r.min, rich.page.scroll); //ZP;
+	e = nil;
+	pos = rich.page.r.min;
+	pos.y -= rich.scroll;
 	for (i = 0; i < elems->count; i++) {
 		if (arrayget(elems, i, &e) == nil)
 			sysfatal("drawelems: failed to get elem");
 		e->pos = pos;
 		pos = drawelem(e);
 	}
+	if (e != nil) rich.max = e->nlpos.y + rich.scroll - rich.page.r.min.y;
+	else rich.max = 0;
 }
 
 Point
@@ -1141,11 +1110,15 @@ drawelem(Elem *e)
 
 	if (e == nil) sysfatal("drawelem: e is nil");
 
+	e->nlpos = (e->prev != nil) ?
+		e->prev->nlpos :
+		Pt(rich.page.r.min.x, rich.page.r.min.y + e->font->height - rich.scroll);
+
 	drawp = dtable[e->type];
 
 	if (drawp == nil) {
 		fprint(2, "drawelem: unknown elem type: %uhhx", e->type);
-		e->type = E_NOOP;
+		// e->type = E_NOOP;
 		drawp = drawnoop;
 	}
 
@@ -1160,6 +1133,9 @@ drawtext(Elem *e)
 	Image *fg;
 	Rune *R;
 	char *sp;
+
+	if (e->nlpos.y < e->pos.y + e->font->height)
+		e->nlpos.y = e->pos.y + e->font->height;
 
 	fg = (e->link != nil) ? Ilink : Itext;
 
@@ -1190,44 +1166,51 @@ drawtext(Elem *e)
 		pos = runestringn(screen, pos, fg, ZP, e->font, &R[s], i);
 		if (nl != 0) {
 			nl = 0;
-			pos = Pt(rich.page.r.min.x, pos.y + e->font->height);
-			/*
-			 * TODO: instead of font->height, calculate line width 
-			 * from max height of every element on this line
-			 */
+			pos = e->nlpos;
+			e->nlpos.y = pos.y + e->font->height;
 		}
 		s += i;
 	}
 
 	free(R);
+
+
 	return pos;
 }
 
 Point
 drawnl(Elem *e)
 {
+	if (e->nlpos.y < e->pos.y + e->font->height)
+		e->nlpos.y = e->pos.y + e->font->height;
+
 	/*
 	 * if (selected) Ibg = Isel;
 	 * else Ibg = Inormbg;
 	 * draw(Ibg);
 	 */
-	return Pt(rich.page.r.min.x, e->pos.y + e->font->height);
+
+	return e->nlpos;
 }
 
 Point
 drawspace(Elem *e)
 {
 	Point pos;
-	int w;
+
+	if (e->nlpos.y < e->pos.y + e->font->height)
+		e->nlpos.y = e->pos.y + e->font->height;
+
 	/*
 	 * if (selected) Ibg = Isel;
 	 * else Ibg = Inormbg;
 	 * draw(Ibg);
 	 */
+
 	pos = e->pos;
-	w = stringwidth(e->font, " ");
+	pos.x += stringwidth(e->font, " ");
 	/* TODO: add linewrap handling */
-	return Pt(e->pos.x + w, e->pos.y);
+	return pos;
 }
 
 Point

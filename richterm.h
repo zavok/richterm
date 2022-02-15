@@ -67,6 +67,8 @@ struct Rich {
 	long selmin;
 	long selmax;
 	Page page;
+	int scroll;
+	int max;
 };
 
 extern Rich rich;
@@ -116,7 +118,6 @@ typedef struct Elem Elem;
 struct Elem {
 	Token;
 
-	void *aux;
 	Point pos;
 	Point nlpos;
 
@@ -129,7 +130,6 @@ struct Elem {
 
 extern Array *elems;
 
-Elem * elemcreate(int, char *);
 void generatesampleelems(void);
 void drawelems(void);
 Point drawelem(Elem *);
