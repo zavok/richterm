@@ -135,10 +135,11 @@ Point drawnl(Elem *);
 Point drawspace(Elem *);
 Point drawnoop(Elem *);
 char * elemparse(Elem *, char *, long);
-char * elemstr(Elem *);
-void elemslink(Array *);
+void elemslinklist(Array *);
 void elemsupdatecache(Array *);
 void generatesampleelems(void);
 void parsedata(Array *, Array *);
 
 extern Array *elems;
+extern Array *richdata;
+extern Elem *euser;

@@ -203,7 +203,6 @@ threadmain(int argc, char **argv)
 		case REDRAW:
 			while (nbrecv(redrawc, &ov2) != 0) ov = minobj(ov, ov2);
 			lockdisplay(display);
-			// redraw(ov);
 			draw(screen, screen->r, Inormbg, nil, ZP);
 			drawelems();
 			drawscrollbar();
@@ -245,45 +244,41 @@ threadmain(int argc, char **argv)
 				break;
 			}
 			if (kv == 0x08) { /* backspace */
-				if (rich.text->count > olast->offset) {
-					rich.text->count--;
-					nbsend(redrawc, &olast);
-				}
 				break;
 			}
-			if (rich.objects->count > 0) {
-				Object *obj;
-				int n;
-
-				obj = nil;
-				n = runelen(kv);
-
-				qlock(rich.l);
-
-				arraygrow(rich.text, n, &kv);
-
-				qunlock(rich.l);
+			if (elems->count > 0) {
+				char *str;
 
 				if (kv == '\n') {
-					Array *dv;
+					Elem *e;
 
-					qlock(rich.l);
-	
-					dv = arraycreate(sizeof(char),
-					  rich.text->count - olast->offset, nil);
-					arraygrow(dv, rich.text->count - olast->offset,
-					  arrayget(rich.text, olast->offset, nil));
+					str = smprint("%c%s\n" "n\n", euser->type, euser->str);
+					arraygrow(richdata, strlen(str), str);
 
-					nbsend(consc, &dv);
-
-					/* dv is freed on recv end */
-
-					qunlock(rich.l);
+					e = mallocz(sizeof(Elem), 1);
+					e->type = E_NL;
+					e->str = strdup("\n");
+					e->count = 1;
+					e->font = font;
 					
-					obj = objectcreate();
-					mkobjectftree(obj, fsroot);
-					objinsertbeforelast(obj);
-					olast->offset = rich.text->count;
+					arraygrow(elems, 1, &e);
+
+					euser = mallocz(sizeof(Elem), 1);
+					euser->type = E_TEXT;
+					euser->str = nil;
+					euser->count = 0;
+					euser->font = font;
+
+					arraygrow(elems, 1, &euser);
+
+					elemslinklist(elems);
+				} else {
+					if (euser->str != nil) {
+						str = smprint("%s%C", euser->str, kv);
+						free(euser->str);
+					} else str = smprint("%C", kv);
+					euser->str = str;
+					euser->count = strlen(str);
 				}
 				nbsend(redrawc, &obj);
 			}
@@ -986,6 +981,7 @@ minobj(Object *o1, Object *o2)
 
 Array *elems;
 Array *richdata;
+Elem *euser;
 
 char *sampledata =
 	".alpha\n"
@@ -1002,7 +998,8 @@ char *sampledata =
 	"L\n"
 	"F\n"
 	"n\n"
-	".Каким-то макаром попали к татарам амбары да бары пропали задаром\n";
+	".Каким-то макаром попали к татарам амбары да бары пропали задаром\n"
+	"n\n";
 
 char *
 elemparse(Elem *e, char *str, long n)
@@ -1017,8 +1014,13 @@ elemparse(Elem *e, char *str, long n)
 	if (ep == nil) return nil;
 	
 	e->type = type;
-	e->str = sp;
 	e->count = ep - sp;
+
+	if (e->count > 0) {
+		e->str = malloc(e->count + 1);
+		memcpy(e->str, sp, e->count);
+		e->str[e->count] = '\0';
+	} else e->str = nil;
 
 	return ep + 1;
 }
@@ -1043,31 +1045,18 @@ parsedata(Array *data, Array *elems)
 	qunlock(data->l);
 }
 
-char *
-elemstr(Elem *e)
-{
-	/* TODO: maybe use static char buffer instead of mallocing */
-
-	char *str;
-
-	if (e->count == 0) return nil;
-
-	str = malloc(e->count + 1);
-	memcpy(str, e->str, e->count);
-	str[e->count] = '\0';
-
-	return str;
-}
-
 void
-elemslink(Array *elems)
+elemslinklist(Array *elems)
 {
 	Elem *e, *eold;
 	long i;
+
+	e = nil;
+
 	for (i = 0; i < elems->count; i++) {
 		eold = e;
 		arrayget(elems, i, &e);
-		
+
 		e->prev = eold;
 		if (eold != nil) eold->next = e;
 	}
@@ -1077,7 +1066,7 @@ void
 elemsupdatecache(Array *elems)
 {
 	Elem *e;
-	char *link, *str;
+	char *link;
 	Font *fnt;
 	long i;
 
@@ -1085,16 +1074,13 @@ elemsupdatecache(Array *elems)
 	fnt = font;
 
 	for (i = 0; i < elems->count; i++) {
-		str = elemstr(e);
-		
+		arrayget(elems, i, &e);
 		switch(e->type) {
 		case E_LINK:
-			if (link != nil) free(link);
-			if (str != nil) link = strdup(str);
-			else link = nil;
+			link = e->str;
 			break;
 		case E_FONT:
-			if (str != nil) fnt = getfont(fonts, str);
+			if (e->str != nil) fnt = getfont(fonts, e->str);
 			else fnt = font;
 			break;
 		case E_IMAGE:
@@ -1104,13 +1090,9 @@ elemsupdatecache(Array *elems)
 			break;
 		}
 
-		if (str != nil) free(str);
-
-		if (link != nil) e->link = strdup(link);
+		e->link = link;
 		e->font = fnt;
 	}
-
-	if (link != nil) free(link);	
 }
 
 void
@@ -1126,7 +1108,15 @@ generatesampleelems(void)
 	arraygrow(richdata, count, (void *)sampledata);
 
 	parsedata(richdata, elems);
-	elemslink(elems);
+
+	euser = mallocz(sizeof(Elem), 1);
+	euser->type = E_TEXT;
+	euser->str = nil;
+	euser->count = 0;
+
+	arraygrow(elems, 1, &euser);
+
+	elemslinklist(elems);
 	elemsupdatecache(elems);
 }
 
@@ -1191,6 +1181,11 @@ drawtext(Elem *e)
 	Rune *R;
 	char *sp;
 
+	if (e->count == 0) return e->pos;
+
+	if (e->font == nil) sysfatal("drawtext: e->font is nil!");
+	if (e->str == nil) sysfatal("drawtext: e->str is nil!");
+
 	if (e->nlpos.y < e->pos.y + e->font->height)
 		e->nlpos.y = e->pos.y + e->font->height;
 
@@ -1238,9 +1233,6 @@ drawtext(Elem *e)
 Point
 drawnl(Elem *e)
 {
-//	if (e->nlpos.y < e->pos.y + e->font->height)
-//		e->nlpos.y = e->pos.y + e->font->height;
-
 	/*
 	 * if (selected) Ibg = Isel;
 	 * else Ibg = Inormbg;
@@ -1254,9 +1246,6 @@ Point
 drawspace(Elem *e)
 {
 	Point pos;
-
-	if (e->nlpos.y < e->pos.y + e->font->height)
-		e->nlpos.y = e->pos.y + e->font->height;
 
 	/*
 	 * if (selected) Ibg = Isel;
