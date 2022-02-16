@@ -106,6 +106,7 @@ enum {
 };
 
 typedef struct Token Token;
+typedef struct Elem Elem;
 
 struct Token {
 	int type;
@@ -113,24 +114,20 @@ struct Token {
 	long count;
 };
 
-typedef struct Elem Elem;
-
 struct Elem {
 	Token;
 
-	Point pos;
-	Point nlpos;
-
 	Elem *next;
 	Elem *prev;
+
 	char *link;
 	Image *image;
 	Font *font;
+
+	Point pos;
+	Point nlpos;
 };
 
-extern Array *elems;
-
-void generatesampleelems(void);
 void drawelems(void);
 Point drawelem(Elem *);
 Point drawtext(Elem *);
@@ -138,3 +135,10 @@ Point drawnl(Elem *);
 Point drawspace(Elem *);
 Point drawnoop(Elem *);
 char * elemparse(Elem *, char *, long);
+char * elemstr(Elem *);
+void elemslink(Array *);
+void elemsupdatecache(Array *);
+void generatesampleelems(void);
+void parsedata(Array *, Array *);
+
+extern Array *elems;

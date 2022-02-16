@@ -985,27 +985,7 @@ minobj(Object *o1, Object *o2)
 /* **** New Code Beyond This Point **** */
 
 Array *elems;
-
-char *
-elemparse(Elem *e, char *str, long n)
-{
-	int type;
-	int count;
-	char *sp, *ep;
-
-	type = *str;
-	sp = str + 1;
-	if (n <= 1) return nil;
-	ep = memchr(sp, '\n', n - 1);
-	if (ep == nil) return nil;
-	count = ep - sp;
-	
-	e->type = type;
-	e->str = sp;
-	e->count = count;
-
-	return ep + 1;
-}
+Array *richdata;
 
 char *sampledata =
 	".alpha\n"
@@ -1024,53 +1004,130 @@ char *sampledata =
 	"n\n"
 	".Каким-то макаром попали к татарам амбары да бары пропали задаром\n";
 
+char *
+elemparse(Elem *e, char *str, long n)
+{
+	int type;
+	char *sp, *ep;
+
+	type = *str;
+	sp = str + 1;
+	if (n <= 1) return nil;
+	ep = memchr(sp, '\n', n - 1);
+	if (ep == nil) return nil;
+	
+	e->type = type;
+	e->str = sp;
+	e->count = ep - sp;
+
+	return ep + 1;
+}
+
+void
+parsedata(Array *data, Array *elems)
+{
+	Elem *e;
+	char *dp;
+
+	qlock(data->l);
+
+	dp = data->p;
+
+	while (dp != nil) {
+		e = mallocz(sizeof(Elem), 1);
+		dp = elemparse(e, dp, data->p + data->count - dp);
+		if (dp == nil) break;
+		arraygrow(elems, 1, &e);
+	}
+
+	qunlock(data->l);
+}
+
+char *
+elemstr(Elem *e)
+{
+	/* TODO: maybe use static char buffer instead of mallocing */
+
+	char *str;
+
+	if (e->count == 0) return nil;
+
+	str = malloc(e->count + 1);
+	memcpy(str, e->str, e->count);
+	str[e->count] = '\0';
+
+	return str;
+}
+
+void
+elemslink(Array *elems)
+{
+	Elem *e, *eold;
+	long i;
+	for (i = 0; i < elems->count; i++) {
+		eold = e;
+		arrayget(elems, i, &e);
+		
+		e->prev = eold;
+		if (eold != nil) eold->next = e;
+	}
+}
+
+void
+elemsupdatecache(Array *elems)
+{
+	Elem *e;
+	char *link, *str;
+	Font *fnt;
+	long i;
+
+	link = nil;
+	fnt = font;
+
+	for (i = 0; i < elems->count; i++) {
+		str = elemstr(e);
+		
+		switch(e->type) {
+		case E_LINK:
+			if (link != nil) free(link);
+			if (str != nil) link = strdup(str);
+			else link = nil;
+			break;
+		case E_FONT:
+			if (str != nil) fnt = getfont(fonts, str);
+			else fnt = font;
+			break;
+		case E_IMAGE:
+			/* load image
+			 * e->image = image
+			 */
+			break;
+		}
+
+		if (str != nil) free(str);
+
+		if (link != nil) e->link = strdup(link);
+		e->font = fnt;
+	}
+
+	if (link != nil) free(link);	
+}
+
 void
 generatesampleelems(void)
 {
-	Elem *e, *eold;
-	char *dp, *link, *fstr;
-	Font *sfont;
 	long count;
 
 	elems = arraycreate(sizeof(Elem *), 128, nil);
-	e = nil;
-	link = nil;
-	sfont = font;
-	dp = sampledata;
+
 	count = strlen(sampledata);
-	while (dp != nil) {
-		eold = e;
-		e = mallocz(sizeof(Elem), 1);
-		dp = elemparse(e, dp, sampledata + count - dp);
-		if (dp == nil) break;
 
-		e->prev = eold;
-		if (eold != nil) eold->next = e;
+	richdata = arraycreate(sizeof(char *), count, nil);
+	arraygrow(richdata, count, (void *)sampledata);
 
-		switch (e->type) {
-		case E_LINK:
-			/* TODO: maybe use char Array instead of blindly reallocing link */
-			if (e->count > 0) {
-				link = realloc(link, e->count + 1);
-				memcpy(link, e->str, e->count);
-				link[e->count] = '\0';
-			} else link = realloc(link, 0);
-			break;
-		case E_FONT:
-			/* TODO: maybe use char Array instead of blindly reallocing fstr */
-			if (e->count > 0) {
-				fstr = mallocz(e->count + 1, 1);
-				memcpy(fstr, e->str, e->count);
-				sfont = getfont(fonts, fstr);
-				free(fstr);
-			} else sfont = font;
-			break;
-		}
-		if (link != nil) e->link = strdup(link);
-		e->font = sfont;
-		arraygrow(elems, 1, &e);
-	}
-	if (link != nil) free(link);
+	parsedata(richdata, elems);
+	elemslink(elems);
+	elemsupdatecache(elems);
 }
 
 void
@@ -1117,8 +1174,8 @@ drawelem(Elem *e)
 	drawp = dtable[e->type];
 
 	if (drawp == nil) {
-		fprint(2, "drawelem: unknown elem type: %uhhx", e->type);
-		// e->type = E_NOOP;
+		fprint(2, "drawelem: unknown elem type: 0x%uhhx '%c'\n", e->type, e->type);
+		e->type = E_NOOP;
 		drawp = drawnoop;
 	}
 
@@ -1181,8 +1238,8 @@ drawtext(Elem *e)
 Point
 drawnl(Elem *e)
 {
-	if (e->nlpos.y < e->pos.y + e->font->height)
-		e->nlpos.y = e->pos.y + e->font->height;
+//	if (e->nlpos.y < e->pos.y + e->font->height)
+//		e->nlpos.y = e->pos.y + e->font->height;
 
 	/*
 	 * if (selected) Ibg = Isel;
