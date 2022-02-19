@@ -243,15 +243,22 @@ threadmain(int argc, char **argv)
 				  &rich);
 				break;
 			}
-			if (kv == 0x08) { /* backspace */
-				break;
-			}
 			if (elems->count > 0) {
 				char *str;
+				int ul;
+				Rune *R;
+				Elem *e;
 
-				if (kv == '\n') {
-					Elem *e;
-
+				if (kv == 0x08) { /* backspace */
+					if ((euser->count == 0) || (euser->str == nil)) break;
+					ul = utfnlen(euser->str, euser->count);
+					R = mallocz(sizeof(Rune) * ul, 1);
+					runesnprint(R, ul, "%s", euser->str);
+					free(euser->str);
+					euser->str = smprint("%S", R);
+					euser->count = strlen(euser->str);
+					free(R);
+				} else if (kv == '\n') {
 					str = smprint("%c%s\n" "n\n", euser->type, euser->str);
 					arraygrow(richdata, strlen(str), str);
 
