@@ -11,7 +11,7 @@
 Array *consbuf, *ctlbuf, *menubuf;
 Channel *consc, *ctlc;
 File *fsroot;
-File *cons, *consctl, *ctl, *menu, *new, *richtext;
+File *cons, *consctl, *ctl, *menu, *new, *text;
 Reqqueue *rq;
 
 void arrayopen(Req *);
@@ -22,18 +22,11 @@ void conswrite(Req *);
 void ctlread(Req *);
 void ctlwrite(Req *);
 void delayedread(Req *);
-void fontread(Req *);
-void fontwrite(Req *);
 void fs_destroyfid(Fid *);
 void fs_flush(Req *);
 void fs_open(Req *);
 void fs_read(Req *);
 void fs_write(Req *);
-void imageclose(Fid *);
-void newopen(Req *);
-void newread(Req *);
-void textread(Req *);
-void textwrite(Req *);
 
 int
 initfs(char *srvname)
@@ -59,7 +52,7 @@ initfs(char *srvname)
 	consctl = createfile(fsroot, "consctl", "richterm", DMAPPEND|0666, 
 		fauxalloc(nil, nil, nil, nil, nil));
 
-	richtext = createfile(fsroot, "richtext", "richterm", 0666,
+	text = createfile(fsroot, "text", "richterm", 0666,
 		fauxalloc(richdata, nil, arrayread, arraywrite, nil));
 
 	menu = createfile(fsroot, "menu", "richterm", 0666,
@@ -202,4 +195,3 @@ conswrite(Req *r)
 
 	respond(r, nil);
 }
-

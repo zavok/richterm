@@ -195,23 +195,7 @@ threadmain(int argc, char **argv)
 			unlockdisplay(display);
 			break;
 		case INSERT:
-			/*obj = objectcreate();
-			mkobjectftree(obj, fsroot);
-			objinsertbeforelast(obj);
-			objsettext(obj, arrayget(av, 0, nil), av->count);*/
-
 			insertfromcons(av);
-			arrayfree(av);
-			// TODO: this is not how things should be done!
-			// elems should be cleaned properly,
-			// or even better only append fresh data instead of reparsing everything
-			elems->count = 0;
-			parsedata(richdata, elems);
-			arraygrow(elems, 1, &euser);
-			elemslinklist(elems);
-			elemsupdatecache(elems);
-
-			nbsend(redrawc, nil);
 			break;
 		case KBD:
 			if (kv == 0x7f) shutdown(); /* delete */
@@ -257,12 +241,14 @@ threadmain(int argc, char **argv)
 				} else if (kv == '\n') {
 
 					// TODO: send str as array to consc channel
-					Array *msg = arraycreate(sizeof(char), strlen(euser->str) + 1, nil);
-					arraygrow(msg, strlen(euser->str), euser->str);
+					Array *msg = arraycreate(sizeof(char), 0, nil);
+					if (euser->str != nil) {
+						arraygrow(msg, strlen(euser->str), euser->str);
+						str = smprint("%c%s\n" "n\n", euser->type, euser->str);
+					} else str = smprint("n\n");
 					arraygrow(msg, 1, "\n");
 					nbsend(consc, &msg);
 
-					str = smprint("%c%s\n" "n\n", euser->type, euser->str);
 					arraygrow(richdata, strlen(str), str);
 
 					e = mallocz(sizeof(Elem), 1);
@@ -1013,6 +999,19 @@ insertfromcons(Array *a)
 		}
 	}
 	qunlock(a->l);
+
+	arrayfree(a);
+
+	// TODO: this is not how things should be done!
+	// elems should be cleaned properly,
+	// or even better only append fresh data instead of reparsing everything
+	elems->count = 0;
+	parsedata(richdata, elems);
+	arraygrow(elems, 1, &euser);
+	elemslinklist(elems);
+	elemsupdatecache(elems);
+
+	nbsend(redrawc, nil);
 }
 
 void

@@ -39,6 +39,7 @@ void generatepage(Rich *, long);
 extern Channel *redrawc;
 extern Channel *insertc;
 extern Channel *consc;
+extern Channel *ctlc;
 extern File *fsroot;
 extern Array *menubuf;
 extern Array *fonts;
