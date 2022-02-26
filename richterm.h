@@ -133,6 +133,7 @@ Point drawelem(Elem *);
 Point drawtext(Elem *);
 Point drawnl(Elem *);
 Point drawspace(Elem *);
+Point drawtab(Elem *);
 Point drawnoop(Elem *);
 char * elemparse(Elem *, char *, long);
 void elemslinklist(Array *);

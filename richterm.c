@@ -24,6 +24,8 @@ Object * minobj(Object *, Object *);
 long getsel(Point);
 int objectisvisible(Object *);
 
+void insertfromcons(Array *);
+
 Rich rich;
 int hostpid = -1;
 Channel *pidchan, *redrawc, *insertc;
@@ -170,11 +172,9 @@ threadmain(int argc, char **argv)
 	quotefmtinstall();
 	atexit(shutdown);
 
-	/*
 	pidchan = chancreate(sizeof(int), 0);
 	proccreate(runcmd, argv, 16 * 1024);
 	hostpid = recvul(pidchan);
-	*/
 
 	threadsetname("main");
 
@@ -210,11 +210,22 @@ threadmain(int argc, char **argv)
 			unlockdisplay(display);
 			break;
 		case INSERT:
-			obj = objectcreate();
+			/*obj = objectcreate();
 			mkobjectftree(obj, fsroot);
 			objinsertbeforelast(obj);
-			objsettext(obj, arrayget(av, 0, nil), av->count);
+			objsettext(obj, arrayget(av, 0, nil), av->count);*/
+
+			insertfromcons(av);
 			arrayfree(av);
+			// TODO: this is not how things should be done!
+			// elems should be cleaned properly,
+			// or even better only append fresh data instead of reparsing everything
+			elems->count = 0;
+			parsedata(richdata, elems);
+			arraygrow(elems, 1, &euser);
+			elemslinklist(elems);
+			elemsupdatecache(elems);
+
 			nbsend(redrawc, &obj);
 			break;
 		case KBD:
@@ -259,6 +270,13 @@ threadmain(int argc, char **argv)
 					euser->count = strlen(euser->str);
 					free(R);
 				} else if (kv == '\n') {
+
+					// TODO: send str as array to consc channel
+					Array *msg = arraycreate(sizeof(char), strlen(euser->str) + 1, nil);
+					arraygrow(msg, strlen(euser->str), euser->str);
+					arraygrow(msg, 1, "\n");
+					nbsend(consc, &msg);
+
 					str = smprint("%c%s\n" "n\n", euser->type, euser->str);
 					arraygrow(richdata, strlen(str), str);
 
@@ -991,8 +1009,8 @@ Array *richdata;
 Elem *euser;
 
 char *sampledata =
-	".alpha\n"
-	"s\n"
+	".A\n"
+	"t\n"
 	".beta\n"
 	"s\n"
 	"Lhttp://nsmpr.xyz\n"
@@ -1111,7 +1129,7 @@ generatesampleelems(void)
 
 	count = strlen(sampledata);
 
-	richdata = arraycreate(sizeof(char *), count, nil);
+	richdata = arraycreate(sizeof(char), count, nil);
 	arraygrow(richdata, count, (void *)sampledata);
 
 	parsedata(richdata, elems);
@@ -1158,7 +1176,7 @@ drawelem(Elem *e)
 		[E_LINK]  drawnoop,
 		[E_IMAGE] drawnoop,
 		[E_NL]    drawnl,
-		[E_TAB]   drawnoop,
+		[E_TAB]   drawtab,
 		[E_SPACE] drawspace,
 	};
 
@@ -1267,7 +1285,51 @@ drawspace(Elem *e)
 }
 
 Point
+drawtab(Elem *e)
+{
+	int x, tabw;
+	tabw = stringwidth(font, "0") * 4;
+	x = (e->pos.x - rich.page.r.min.x) / tabw;
+	Point pos;
+	pos = e->pos;
+	pos.x = rich.page.r.min.x + (x + 1) * tabw;
+	return pos;
+}
+
+Point
 drawnoop(Elem *e)
 {
 	return e->pos;
+}
+
+void
+insertfromcons(Array *a)
+{
+	int i, nl;
+	qlock(a->l);
+	nl = 1;
+	for (i = 0; i < a->count; i++) {
+		if (nl != 0) {
+			arraygrow(richdata, 1, ".");
+			nl = 0;
+		}
+
+		switch (a->p[i]) {
+		case ' ':
+			arraygrow(richdata, 3, "\ns\n");
+			nl = 1;
+			break;
+		case '\t':
+			arraygrow(richdata, 3, "\nt\n");
+			nl = 1;
+			break;
+		case '\n':
+			arraygrow(richdata, 3, "\nn\n");
+			nl = 1;
+			break;
+		default:
+			arraygrow(richdata, 1, a->p + i);
+		}
+	}
+	qunlock(a->l);
 }

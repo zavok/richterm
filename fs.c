@@ -46,26 +46,40 @@ initfs(char *srvname)
 		.flush = fs_flush,
 		.destroyfid = fs_destroyfid,
 	};
-	newobj = nil;
+	// newobj = nil;
 	consbuf = nil;
 	rq = reqqueuecreate();
-	menubuf = arraycreate(sizeof(char), 1024, nil);
+	// menubuf = arraycreate(sizeof(char), 1024, nil);
 	consc = chancreate(sizeof(Array *), 1024);
-	ctlc = chancreate(sizeof(Array *), 1024);
+	// ctlc = chancreate(sizeof(Array *), 1024);
+
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	fsroot = srv.tree->root;
-	new = createfile(fsroot, "new", "richterm", 0444, 
+
+	cons = createfile(fsroot, "cons", "richterm", DMAPPEND|0666,
+		fauxalloc(nil, nil, nil, consread, conswrite, nil));
+
+	consctl = createfile(fsroot, "consctl", "richterm", DMAPPEND|0666, 
+		fauxalloc(nil, nil, nil, nil, nil, nil));
+
+/*
+
+	new = createfile(fsroot, "new", "richterm", 0444,
 		fauxalloc(nil, nil, newopen, newread, nil, nil));
 	ctl = createfile(fsroot, "ctl", "richterm", DMAPPEND|0666, 
 		fauxalloc(nil, nil, nil, ctlread, ctlwrite, nil));
-	text = createfile(fsroot, "text", "richterm", 0444, 
+
+
+	text = createfile(fsroot, "text", "richterm", 0444,
 		fauxalloc(nil, rich.text, nil, arrayread, nil, nil));
-	cons = createfile(fsroot, "cons", "richterm", DMAPPEND|0666, 
-		fauxalloc(nil, nil, nil, consread, conswrite, nil));
-	consctl = createfile(fsroot, "consctl", "richterm", DMAPPEND|0666, 
-		fauxalloc(nil, nil, nil, nil, nil, nil));
-	menu = createfile(fsroot, "menu", "richterm", 0666, 
+
+
+
+	menu = createfile(fsroot, "menu", "richterm", 0666,
 		fauxalloc(nil, menubuf, nil, arrayread, arraywrite, nil));
+
+*/
+
 	threadpostmountsrv(&srv, srvname, "/mnt/richterm", MREPL);
 	return 0;
 }
@@ -234,6 +248,9 @@ arrayopen(Req *r)
 void
 arrayread(Req *r)
 {
+
+/*
+
 	Array *data;
 	data = ((Faux *)r->fid->file->aux)->data;
 	qlock(rich.l);
@@ -241,6 +258,9 @@ arrayread(Req *r)
 	readbuf(r, data->p, data->count);
 	qunlock(data->l);
 	qunlock(rich.l);
+
+*/
+
 	respond(r, nil);
 }
 
@@ -370,6 +390,7 @@ consread(Req *r)
 		arrayfree(consbuf);
 		consbuf = nil;
 	}
+
 	respond(r, nil);
 }
 
@@ -381,6 +402,7 @@ conswrite(Req *r)
 	arraygrow(a, r->ifcall.count, r->ifcall.data);
 	nbsend(insertc, &a);
 	r->ofcall.count = r->ifcall.count;
+
 	respond(r, nil);
 }
 
