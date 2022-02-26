@@ -18,12 +18,6 @@ void send_interrupt(void);
 void runcmd(void *);
 void scroll(Point, Rich *);
 void mouse(Mousectl *, Mouse, int *);
-void drawobject(Object *, Point *);
-Object * getobj(Point);
-Object * minobj(Object *, Object *);
-long getsel(Point);
-int objectisvisible(Object *);
-
 void insertfromcons(Array *);
 
 Rich rich;
@@ -49,12 +43,12 @@ Menu mmenu = {
 	.lasthit = 0,
 };
 
-void rfollow(Object *);
-void rsnarf(Object *);
-void rplumb(Object *);
+void rfollow(void *);
+void rsnarf(void *);
+void rplumb(void *);
 
 char *ritems[] = {"Follow", "Snarf", "Plumb", nil};
-void (*rfunc[])(Object *) = {rfollow, rsnarf, rplumb, nil};
+void (*rfunc[])(void *) = {rfollow, rsnarf, rplumb, nil};
 int rsize = sizeof(ritems) / sizeof(*ritems);
 char * rgen(int);
 
@@ -72,8 +66,6 @@ Menu rusermenu = {
 	.gen = rusergen,
 	.lasthit = 0,
 };
-
-Object *olast;
 
 enum {
 	MM_NONE,
@@ -95,7 +87,6 @@ threadmain(int argc, char **argv)
 	int rv[2], mmode;
 	Mouse mv;
 	Rune kv;
-	Object *ov, *ov2, *obj;
 	Array *av;
 
 	ARGBEGIN{
@@ -109,9 +100,6 @@ threadmain(int argc, char **argv)
 		usage();
 	} ARGEND
 
-	ov = nil;
-	ov2 = nil;
-	obj = nil;
 	av = nil;
 	mmode = MM_NONE;
 
@@ -143,12 +131,6 @@ threadmain(int argc, char **argv)
 
 	qlock(rich.l);
 
-	rich.text = arraycreate(sizeof(char), 4096, nil);
-	rich.objects = arraycreate(sizeof(Object *), 8, nil);
-
-	olast = objectcreate();
-	arraygrow(rich.objects, 1, &olast);
-
 	rich.page.scroll = ZP;
 
 	rich.selmin = 0;
@@ -156,7 +138,7 @@ threadmain(int argc, char **argv)
 
 	qunlock(rich.l);
 
-	redrawc = chancreate(sizeof(Object *), 8);
+	redrawc = chancreate(sizeof(void *), 8);
 	insertc = chancreate(sizeof(Array *), 8);
 
 	generatesampleelems();
@@ -178,6 +160,7 @@ threadmain(int argc, char **argv)
 
 	threadsetname("main");
 
+	void *ov, *ov2;
 
 	enum {MOUSE, RESIZE, REDRAW, INSERT, KBD, AEND};
 	Alt alts[AEND + 1] = {
@@ -201,7 +184,9 @@ threadmain(int argc, char **argv)
 			nbsend(redrawc, nil);
 			break;
 		case REDRAW:
-			while (nbrecv(redrawc, &ov2) != 0) ov = minobj(ov, ov2);
+
+			while (nbrecv(redrawc, &ov2) != 0) ov = ov2;
+
 			lockdisplay(display);
 			draw(screen, screen->r, Inormbg, nil, ZP);
 			drawelems();
@@ -226,7 +211,7 @@ threadmain(int argc, char **argv)
 			elemslinklist(elems);
 			elemsupdatecache(elems);
 
-			nbsend(redrawc, &obj);
+			nbsend(redrawc, nil);
 			break;
 		case KBD:
 			if (kv == 0x7f) shutdown(); /* delete */
@@ -305,7 +290,7 @@ threadmain(int argc, char **argv)
 					euser->str = str;
 					euser->count = strlen(str);
 				}
-				nbsend(redrawc, &obj);
+				nbsend(redrawc, nil);
 			}
 			break;
 		case AEND:
@@ -365,6 +350,7 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 	case MM_TEXT:
 		break;
 
+/*
 		if (mv.buttons == 1) {
 			selstart = getsel(mv.xy);
 			selend = selstart;
@@ -394,15 +380,16 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 			*mmode = MM_NONE;
 		}
 		break;
+*/
+
 	case MM_SELECT:
 		break;
 
+/*
 		if (mv.buttons == (1|2)) {
-			/* cut */
 			break;
 		}
 		if (mv.buttons == (1|4)) {
-			/* paste */
 			break;
 		}
 		selend = getsel(mv.xy);
@@ -414,6 +401,8 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 			rich.selmax = selstart;
 		}
 		nbsend(redrawc, nil);
+*/
+
 	}
 }
 
@@ -469,26 +458,6 @@ drawscrollbar(void)
 	draw(screen, rich.page.rs, Iscrollbar, nil, ZP);
 	draw(screen, rs, Inormbg, nil, ZP);
 }
-
-Object *
-objectcreate(void)
-{
-	Object *obj;
-	obj = mallocz(sizeof(Object), 1);
-
-	obj->font = font;
-	obj->dlink = arraycreate(sizeof(char), 4096, nil);
-	obj->dimage = arraycreate(sizeof(char), 4096, nil);
-	return obj;
-}
-
-void
-objectfree(Object *obj)
-{
-	arrayfree(obj->dlink);
-	arrayfree(obj->dimage);
-}
-
 
 void
 runcmd(void *args)
@@ -567,7 +536,7 @@ mpaste(Rich *)
 		}
 		if (n < 0) fprint(2, "mpaste: %r\n");
 		close(fd);
-		nbsend(redrawc, &olast);
+		nbsend(redrawc, nil);
 	}
 }
 
@@ -606,289 +575,6 @@ mplumb(Rich *)
 	}
 }
 
-int
-objectisvisible(Object *obj)
-{
-	return (obj->nextlinept.y >= rich.page.scroll.y) &&
-		  (obj->startpt.y <= rich.page.scroll.y + Dy(rich.page.r));
-}
-
-void
-_drawchar(Rune r, Point pt, Font *font, Image *fg, Image *bg)
-{
-	runestringnbg(screen,
-	  subpt(addpt(pt, rich.page.r.min), rich.page.scroll),
-	  fg, ZP, font, &r, 1, bg, ZP);
-}
-
-void
-drawchar(Object *obj, long *n, Point *cur)
-{
-	int tabw, cw;
-	Image *bg, *fg;
-	Rune r;
-	char *p;
-
-	bg = ((*n >= rich.selmin) && (*n < rich.selmax)) ?
-		Iselbg : Inormbg;
-
-	fg = (obj->dlink->count > 0) ? Ilink : Itext;
-
-	p = arrayget(rich.text, *n, nil);
-
-	if (p == nil) return;
-
-	*n += chartorune(&r, p);
-	cw = runestringnwidth(obj->font, &r, 1);
-
-	if (cur->x + cw >= Dx(rich.page.r)) {
-		*cur = obj->nextlinept;
-		obj->nextlinept.y += obj->font->height;
-	}
-
-	switch (*p) {
-	case '\n':
-		if (objectisvisible(obj))
-			draw(screen,
-			  rectaddpt(
-				Rpt(*cur, Pt(Dx(rich.page.r), obj->nextlinept.y)),
-			    subpt(rich.page.r.min, rich.page.scroll)),
-			  bg, nil, ZP);
-
-		cur->x = Dx(rich.page.r);
-		break;
-	case '\t':
-		tabw = stringwidth(font, "0") * 4;
-		if (objectisvisible(obj))
-			draw(screen,
-			  rectaddpt(
-				Rpt(*cur, Pt(cur->x + tabw, obj->nextlinept.y)),
-			    subpt(rich.page.r.min, rich.page.scroll)),
-			  bg, nil, ZP);
-
-		cur->x = (cur->x / tabw + 1) * tabw;
-		break;
-	default:
-		if (objectisvisible(obj))
-			_drawchar(r, *cur, obj->font, fg, bg);
-		cur->x += cw;
-	}
-}
-
-void
-drawobject(Object *obj, Point *cur)
-{
-	long i, n;
-	if ((obj->offset > rich.text->count) || (obj->offset < 0)) {
-		fprint(2, "drawobject: object out of bonds: %ld %ld\n",
-		  obj->offset, rich.text->count);
-		return;
-	}
-
-	if ((cur->x >= Dx(rich.page.r)) && (obj->prev != nil)) {
-		*cur = obj->prev->nextlinept;
-	}
-
-	obj->nextlinept = Pt(0, cur->y + obj->font->height);
-
-	if ((obj->prev != nil) && (cur->x != 0)) {
-		if (obj->nextlinept.y < obj->prev->nextlinept.y)
-			obj->nextlinept.y = obj->prev->nextlinept.y;
-	}
-
-	if (obj->image != nil) {
-		Rectangle r;
-		r = rectaddpt(obj->image->r,
-		  subpt(addpt(*cur, rich.page.r.min), rich.page.scroll));
-		draw(screen, r, obj->image, nil, ZP);
-		cur->x += Dx(r);
-		if (cur->y + Dy(r) > obj->nextlinept.y)
-			obj->nextlinept.y = cur->y + Dy(r);
-	}
-
-	obj->startpt = *cur;
-
-	if (obj->next == nil) n = rich.text->count;
-	else n = obj->next->offset;
-
-	for (i = obj->offset; i < n;) {
-		drawchar(obj, &i, cur);
-	}
-	obj->endpt = *cur;
-}
-
-void
-redraw(Object *op)
-{
-
-	Point cur;
-	Object *obj;
-	int skip;
-	long i;
-
-	obj = nil;
-	cur = ZP;
-	skip = 0;
-
-	qlock(rich.l);
-
-	if (op == nil) draw(screen, rich.page.r, Inormbg, nil, ZP);
-	else {
-		skip = 1;
-
-		/* TODO: following will clean previous objects if selected
-		 * object is not at x=0, even though I did not encounter
-		 * this so far in testing.
-		 * Still, it should probably be fixed in the future.
-		 */
-
-		draw(
-		  screen,
-		  Rpt(
-		    subpt(
-		      addpt(Pt(0, op->endpt.y), rich.page.r.min),
-		      rich.page.scroll),
-		    rich.page.r.max),
-		  Inormbg, nil, ZP);
-	}
-
-	for (i = 0; i < rich.objects->count; i++) {
-		if (arrayget(rich.objects, i, &obj) == nil)
-			sysfatal("redraw: %r");
-		if (obj == op) skip = 0;
-		if (skip == 0) drawobject(obj, &cur);
-		else {
-			cur = obj->endpt;
-		}
-	}
-	rich.page.max = obj->nextlinept;
-	if (rich.page.scroll.y > rich.page.max.y)
-		rich.page.scroll.y = rich.page.max.y;
-	qunlock(rich.l);
-
-}
-
-Object *
-getobj(Point xy)
-{
-	long i;
-	Object *obj;
-	Point prevlinept;
-	xy = subpt(xy, subpt(rich.page.r.min, rich.page.scroll));
-	for (i = 0; i < rich.objects->count; i++) {
-		arrayget(rich.objects, i, &obj);
-		prevlinept = ( obj->prev == nil) ? ZP : obj->prev->nextlinept;
-
-		if (((obj->startpt.y == obj->endpt.y) &&
-		    (xy.y >= obj->startpt.y) &&
-			(xy.y < obj->nextlinept.y) &&
-		    (xy.x >= obj->startpt.x) &&
-		    (xy.x < obj->endpt.x)) ||
-
-		  ((xy.x >= obj->startpt.x) &&
-		    (xy.y >= obj->startpt.y) &&
-		    (xy.y < obj->endpt.y)) ||
-
-		  ((obj->startpt.y < obj->endpt.y) &&
-		    (xy.x < obj->endpt.x) &&
-		    (xy.y >= obj->endpt.y) &&
-		    (xy.y < obj->nextlinept.y)) ||
-
-		  ((xy.y >= prevlinept.y) &&
-		    (xy.y < obj->endpt.y))
-		)
-			return obj;
-	}
-	return nil;
-}
-
-long
-getsel(Point xy)
-{
-	Object *obj;
-	long n, i, li;
-	Point cur, oldcur;
-
-	obj = getobj(xy);
-
-	xy = subpt(xy, subpt(rich.page.r.min, rich.page.scroll));
-
-	if (obj == nil)
-		return (xy.y > rich.page.max.y) ? rich.text->count : 0;
-
-	n = (obj->next == nil) ? rich.text->count : obj->next->offset;
-	li = obj->offset;
-
-	cur = obj->startpt;
-	obj->nextlinept = Pt(0, cur.y + obj->font->height);
-	if ((obj->prev != nil) && (cur.x != 0)) {
-		if (obj->nextlinept.y < obj->prev->nextlinept.y)
-			obj->nextlinept.y = obj->prev->nextlinept.y;
-	}
-
-	for (i = obj->offset; i < n;) {
-		oldcur = cur;
-		li = i;
-		drawchar(obj, &i, &cur);
-
-		if (ptinrect(xy, Rpt(oldcur, Pt(cur.x, obj->nextlinept.y))) ||
-		  (cur.y > xy.y))
-			break;
-	}
-	return li;
-}
-
-void
-objinsertbeforelast(Object *obj)
-{
-	qlock(rich.l);
-	obj->offset = olast->offset;
-	arrayinsert(rich.objects, rich.objects->count - 1, 1, &obj);
-	obj->next = olast;
-	obj->prev = olast->prev;
-	if (olast->prev != nil) olast->prev->next = obj;
-	olast->prev = obj;
-	obj->endpt = olast->startpt;
-	qunlock(rich.l);
-}
-
-long
-objtextlen(Object *obj)
-{
-	long n;
-	n = (obj->next == nil) ? rich.text->count : obj->next->offset;
-	return n - obj->offset;
-}
-
-void
-objsettext(Object *obj, char *data, long count)
-{
-	long n, m, dn;
-	char *p, *pe;
-
-	n = objtextlen(obj);
-	m = count;
-	dn = m - n;
-
-	if (dn > 0) arraygrow(rich.text, dn, nil);
-	else rich.text->count += dn;
-
-	p = arrayget(rich.text, obj->offset, nil);
-	pe = arrayget(rich.text, rich.text->count - dn, nil);
-
-	qlock(rich.text->l);
-	if (p != nil) memcpy(p + m, p + n,  pe - p);
-	else p = pe;
-	memcpy(p, data, count);
-	qunlock(rich.text->l);
-
-	qlock(rich.objects->l);
-	if (obj->ftext != nil) obj->ftext->length = count;
-	for (obj = obj->next; obj != nil; obj = obj->next) {
-		obj->offset += dn;
-	}
-	qunlock(rich.objects->l);
-}
 
 char *
 rgen(int n)
@@ -898,20 +584,25 @@ rgen(int n)
 }
 
 void
-rfollow(Object *obj)
+rfollow(void *)
 {
+
+/*
 	Array *a;
 	a = arraycreate(sizeof(char), 1024, nil);
 	arraygrow(a, 5, "link ");
 	arraygrow(a, obj->dlink->count, arrayget(obj->dlink, 0, nil));
 	arraygrow(a, 1, "\n");
-
 	nbsend(ctlc, &a);
+*/
+
 }
 
 void
-rsnarf(Object *obj)
+rsnarf(void *)
 {
+
+/*
 	int fd;
 	long n;
 	if ((fd = open("/dev/snarf", OWRITE)) > 0) {
@@ -920,11 +611,15 @@ rsnarf(Object *obj)
 		if (n < obj->dlink->count) fprint(2, "rsnarf: %r\n");
 		close(fd);
 	}
+*/
+
 }
 
 void
-rplumb(Object *obj)
+rplumb(void *)
 {
+/*
+
 	char buf[1024];
 	int pd;
 	Plumbmsg m;
@@ -941,6 +636,8 @@ rplumb(Object *obj)
 		plumbsend(pd, &m);
 		close(pd);
 	}
+*/
+
 }
 
 void
@@ -956,7 +653,7 @@ ruseract(int f)
 	arraygrow(a, 5, "menu ");
 	arraygrow(a, strlen(s), s);
 	arraygrow(a, 1, "\n");
-	nbsend(ctlc, &a);
+	// nbsend(ctlc, &a);
 }
 
 
@@ -984,22 +681,6 @@ rusergen(int f)
 	if (ps == pe) return nil;
 	memcpy(genbuf, ps, pe - ps);
 	return genbuf;
-}
-
-Object *
-minobj(Object *o1, Object *o2)
-{
-	Object *op;
-	Array *objs;
-	long n;
-	objs = rich.objects;
-	if ((o1 == nil) || (o2 == nil)) return nil;
-	for (n = 0; n < objs->count; n++) {
-		arrayget(objs, n, &op);
-		if (op == o1) return o1;
-		if (op == o2) return o2;
-	}
-	return nil;
 }
 
 /* **** New Code Beyond This Point **** */
@@ -1332,4 +1013,18 @@ insertfromcons(Array *a)
 		}
 	}
 	qunlock(a->l);
+}
+
+void
+freeelem(Elem *e)
+{
+	e->str = realloc(e->str, 0);
+	e->count = 0;
+	e->next = nil;
+	e->prev = nil;
+	e->link = realloc(e->link, 0);
+	if (e->image != nil) freeimage(e->image);
+	e->font = nil;
+	e->pos = ZP;
+	e->nlpos = ZP;
 }

@@ -1,54 +1,6 @@
-extern Channel *redrawc;
-extern Channel *insertc;
-extern Channel *consc;
-extern Channel *ctlc;
-extern File *fsroot;
-extern Array *menubuf;
-
-void drawscrollbar(void);
-
-typedef struct Object Object;
-
-struct Object {
-	File *dir;
-	File *ftext;
-	File *ffont;
-	File *flink;
-	File *fimage;
-	char *id;
-
-	Array *dlink;
-	Array *dimage;
-	Font *font;
-	Image *image;
-
-	long offset;
-
-	Object *next;
-	Object *prev;
-
-	Point startpt;
-	Point endpt;
-	Point nextlinept;
-};
-
-extern Object *olast;
-
-void redraw(Object *);
-
-Object * objectcreate(void);
-Object * mkobjectftree(Object *, File *);
-void objinsertbeforelast(Object *);
-void rmobjectftree(Object *);
-void objectfree(Object *);
-long objtextlen(Object *obj);
-void objsettext(Object *, char *, long);
-
-extern Array *fonts;
-
-Font* getfont(Array *, char *);
-
 typedef struct Page Page;
+typedef struct Rich Rich;
+typedef struct Faux Faux;
 
 struct Page {
 	Point scroll;
@@ -56,8 +8,6 @@ struct Page {
 	Rectangle r;
 	Rectangle rs;
 };
-
-typedef struct Rich Rich;
 
 struct Rich {
 	QLock *l;
@@ -71,17 +21,7 @@ struct Rich {
 	int max;
 };
 
-extern Rich rich;
-
-void drawpage(Image *, Rich *);
-void generatepage(Rich *, long);
-
-int initfs(char *);
-
-typedef struct Faux Faux;
-
 struct Faux {
-	Object *obj;
 	Array *data;
 	void (*open)(Req *);
 	void (*read)(Req *);
@@ -89,8 +29,20 @@ struct Faux {
 	void (*destroyfid)(Fid *);
 };
 
-Faux * fauxalloc(Object *, Array *, void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Fid *));
+Faux * fauxalloc(Array *, void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Fid *));
+Font* getfont(Array *, char *);
+int initfs(char *);
+void drawpage(Image *, Rich *);
+void drawscrollbar(void);
+void generatepage(Rich *, long);
 
+extern Channel *redrawc;
+extern Channel *insertc;
+extern Channel *consc;
+extern File *fsroot;
+extern Array *menubuf;
+extern Array *fonts;
+extern Rich rich;
 
 /* **** New Code Beyond This Point **** */
 
@@ -138,6 +90,7 @@ Point drawnoop(Elem *);
 char * elemparse(Elem *, char *, long);
 void elemslinklist(Array *);
 void elemsupdatecache(Array *);
+void freeelem(Elem *);
 void generatesampleelems(void);
 void parsedata(Array *, Array *);
 
