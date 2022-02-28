@@ -3,6 +3,7 @@
 #include <bio.h>
 
 const char *scheme = "gopher://";
+char *rroot = "/mnt/richterm";
 
 void
 usage(void)
@@ -48,8 +49,16 @@ printtext(char *buf, long size)
 void
 printmenu(char *buf, long size)
 {
-	char *lbuf, *ls, *le, type, *port, *host, *path, url[1024];
+	int tfd;
+	char *rpath, *lbuf, *ls, *le, type, *port, *host, *path, url[1024];
 	long lsize, n;
+
+	rpath = smprint("%s/text", rroot);
+	tfd = open(rpath, OWRITE);
+	if (tfd < 0) sysfatal("printmenu: can't open %s: %r", rpath);
+	
+	seek(tfd, 0, 2);
+
 	ls = buf;
 	lsize = 1024;
 	lbuf = malloc(lsize);
@@ -73,7 +82,7 @@ printmenu(char *buf, long size)
 		switch (type) {
 		case 'i':
 		case 'e':
-			newobj(lbuf + 1, nil);
+			url[0] = '\0';
 			break;
 		default:
 			path = le + 1;
@@ -84,9 +93,14 @@ printmenu(char *buf, long size)
 			*le = '\0';
 			port = le + 1;
 			snprint(url, 1024, "gopher://%s:%s/%c%s", host, port, type, path);
-			newobj(lbuf + 1, url);
 		}
-		newobj("\n", nil);
+		// newobj("\n", nil);
+		fprint(tfd,
+		  "l%s\n"
+		  ".%s\n"
+		  "n\n",
+		  url, lbuf + 1
+		);
 	}
 }
 
