@@ -110,7 +110,7 @@ fs_write(Req *r)
 			nbsend(redrawc, nil);
 		}
 		else respond(r, "no write");
-	} else respond(r, "fs_write: f->aux is nil");
+	} else respond(r, nil);
 }
 
 void
@@ -124,7 +124,7 @@ fs_stat(Req *r)
 			r->d.length = aux->data->count;
 			respond(r, nil);
 		}
-	} else respond(r, "fs_stat: f->aux is nil");
+	} else respond(r, nil);
 }
 
 void
@@ -141,7 +141,7 @@ delayedread(Req *r)
 	if (aux != nil) {
 		if (aux->read != nil) aux->read(r);
 		else respond(r, "no read");
-	} else respond(r, "fs_read: f->aux is nil");
+	} else respond(r, nil);
 }
 
 void
