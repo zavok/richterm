@@ -31,6 +31,7 @@ main(int argc, char **argv)
 		dbuf = mallocz(DIRMAX, 1);
 		n = dirreadall(fd, &dbuf);
 
+		seek(tfd, 0, 2);
 		fprint(tfd, "l\nf\n");
 
 		for (i = 0; i < n; i++) {
