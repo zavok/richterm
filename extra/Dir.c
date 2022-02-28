@@ -25,11 +25,14 @@ main(int argc, char **argv)
 	if (dp->mode & DMDIR) {
 
 		char *rpath = smprint("%s/text", rroot);
-		tfd = open(rpath , OWRITE | OTRUNC);
+		tfd = open(rpath , OWRITE);
 		if (tfd < 0) sysfatal("can't open %s: %r", rpath);
 
 		dbuf = mallocz(DIRMAX, 1);
 		n = dirreadall(fd, &dbuf);
+
+		fprint(tfd, "l\nf\n");
+
 		for (i = 0; i < n; i++) {
 			char *spacer = "";
 			if (dbuf[i].mode & DMEXEC) spacer = "*";
