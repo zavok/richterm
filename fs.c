@@ -27,6 +27,7 @@ void fs_flush(Req *);
 void fs_open(Req *);
 void fs_read(Req *);
 void fs_write(Req *);
+void fs_stat(Req *);
 
 int
 initfs(char *srvname)
@@ -36,6 +37,7 @@ initfs(char *srvname)
 		.read  = fs_read,
 		.write = fs_write,
 		.flush = fs_flush,
+		.stat  = fs_stat,
 		.destroyfid = fs_destroyfid,
 	};
 	consbuf = nil;
@@ -47,29 +49,34 @@ initfs(char *srvname)
 	fsroot = srv.tree->root;
 
 	cons = createfile(fsroot, "cons", "richterm", DMAPPEND|0666,
-		fauxalloc(nil, nil, consread, conswrite, nil));
+		fauxalloc(nil, nil, consread, conswrite, nil, nil));
 
 	consctl = createfile(fsroot, "consctl", "richterm", DMAPPEND|0666, 
-		fauxalloc(nil, nil, nil, nil, nil));
+		fauxalloc(nil, nil, nil, nil, nil, nil));
 
 	text = createfile(fsroot, "text", "richterm", 0666,
-		fauxalloc(richdata, nil, arrayread, arraywrite, nil));
+		fauxalloc(richdata, arrayopen, arrayread, arraywrite, nil, nil));
+	text->length = richdata->count;
 
 	menu = createfile(fsroot, "menu", "richterm", 0666,
-		fauxalloc(menubuf, nil, arrayread, arraywrite, nil));
+		fauxalloc(menubuf, nil, arrayread, arraywrite, nil, nil));
 
 	threadpostmountsrv(&srv, srvname, "/mnt/richterm", MREPL);
 	return 0;
 }
 
 Faux *
-fauxalloc(Array *data,
-  void (*open)(Req *), void (*read)(Req *),
-  void (*write)(Req *), void (*destroyfid)(Fid *))
+fauxalloc(
+  Array *data,
+  void (*open)(Req *),
+  void (*read)(Req *),
+  void (*write)(Req *),
+  void (*stat)(Req *),
+  void (*destroyfid)(Fid *))
 {
 	Faux *aux;
 	aux = mallocz(sizeof(Faux), 1);
-	*aux = (Faux) {data, open, read, write, destroyfid};
+	*aux = (Faux) {data, open, read, write, stat, destroyfid};
 	return aux;
 }
 
@@ -81,8 +88,7 @@ fs_destroyfid(Fid *fid)
 void
 fs_open(Req *r)
 {
-	Faux *aux;
-	aux = r->fid->file->aux;
+	Faux *aux = r->fid->file->aux;
 	if ((aux != nil) && (aux->open != nil)) aux->open(r);
 	else respond(r, nil);
 }
@@ -108,6 +114,20 @@ fs_write(Req *r)
 }
 
 void
+fs_stat(Req *r)
+{
+	Faux *aux = r->fid->file->aux;
+	if (aux != nil) {
+		if (aux->stat != nil) aux->stat(r);
+		else if (aux->data != nil) {
+			r->fid->file->length = aux->data->count;
+			r->d.length = aux->data->count;
+			respond(r, nil);
+		}
+	} else respond(r, "fs_stat: f->aux is nil");
+}
+
+void
 fs_flush(Req *r)
 {
 	respond(r, nil);
@@ -127,21 +147,27 @@ delayedread(Req *r)
 void
 arrayopen(Req *r)
 {
-	
+	Array *data = ((Faux *)r->fid->file->aux)->data;
+
+	if ((r->ifcall.mode & OTRUNC) != 0) {
+		qlock(data->l);
+		data->count = 0;
+		qunlock(data->l);
+		r->fid->file->length = 0;
+	}
 	respond(r, nil);
 }
 
 void
 arrayread(Req *r)
 {
-	Array *data;
-	data = ((Faux *)r->fid->file->aux)->data;
+	Array *data = ((Faux *)r->fid->file->aux)->data;
+
 	qlock(rich.l);
 	qlock(data->l);
 	readbuf(r, data->p, data->count);
 	qunlock(data->l);
 	qunlock(rich.l);
-
 
 	respond(r, nil);
 }
@@ -149,22 +175,24 @@ arrayread(Req *r)
 void
 arraywrite(Req *r)
 {
-	long count;
-	Array *data;
-	qlock(rich.l);
-	data = ((Faux *)r->fid->file->aux)->data;
-	count = r->ifcall.count + r->ifcall.offset;
+	Array *data = ((Faux *)r->fid->file->aux)->data;
+
+	long count = r->ifcall.count + r->ifcall.offset;
+
+
 	if (count > data->count) arraygrow(data, count - data->count, nil);
+
 	else data->count = count;
 
-//	data->count = 0;
-//	arraygrow(data, r->ifcall.count, r->ifcall.data);
 	qlock(data->l);
+
 	memcpy(data->p + r->ifcall.offset, r->ifcall.data, r->ifcall.count);
 	qunlock(data->l);
+
 	r->ofcall.count = r->ifcall.count;
+
 	r->fid->file->length = data->count;
-	qunlock(rich.l);
+
 	respond(r, nil);
 }
 

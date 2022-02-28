@@ -26,10 +26,11 @@ struct Faux {
 	void (*open)(Req *);
 	void (*read)(Req *);
 	void (*write)(Req *);
+	void (*stat)(Req *);
 	void (*destroyfid)(Fid *);
 };
 
-Faux * fauxalloc(Array *, void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Fid *));
+Faux * fauxalloc(Array *, void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Fid *));
 Font* getfont(Array *, char *);
 int initfs(char *);
 void drawpage(Image *, Rich *);
@@ -50,8 +51,8 @@ extern Rich rich;
 enum {
 	E_NOOP  = '\0',
 	E_TEXT  = '.',
-	E_FONT  = 'F',
-	E_LINK  = 'L',
+	E_FONT  = 'f',
+	E_LINK  = 'l',
 	E_IMAGE = 'I',
 	E_NL    = 'n',
 	E_TAB   = 't',

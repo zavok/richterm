@@ -676,21 +676,7 @@ Array *richdata;
 Elem *euser;
 
 char *sampledata =
-	".A\n"
-	"t\n"
-	".beta\n"
-	"s\n"
-	"Lhttp://nsmpr.xyz\n"
-	".gamma\n"
-	"L\n"
-	"s\n"
-	"Lhttp://9front.org\n"
-	"F/lib/font/bit/terminus/unicode.12.font\n"
-	".delta\n"
-	"L\n"
-	"F\n"
-	"n\n"
-	".Каким-то макаром попали к татарам амбары да бары пропали задаром\n"
+	".We richterm now\n"
 	"n\n";
 
 char *
