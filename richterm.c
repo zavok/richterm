@@ -19,6 +19,7 @@ void runcmd(void *);
 void scroll(Point, Rich *);
 void mouse(Mousectl *, Mouse, int *);
 void insertfromcons(Array *);
+Elem *getelem(Point);
 
 Rich rich;
 int hostpid = -1;
@@ -159,6 +160,9 @@ threadmain(int argc, char **argv)
 	hostpid = recvul(pidchan);
 
 	threadsetname("main");
+
+	char initmenu[] = "test\n";
+	arraygrow(menubuf, sizeof(initmenu), initmenu);
 
 	void *ov, *ov2;
 
@@ -334,30 +338,31 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 		}
 		break;
 	case MM_TEXT:
-		break;
-
-/*
 		if (mv.buttons == 1) {
+			/*
 			selstart = getsel(mv.xy);
 			selend = selstart;
 			rich.selmin = selstart;
 			rich.selmax = selstart;
 			nbsend(redrawc, nil);
 			*mmode = MM_SELECT;
+			/*
 		} else if (mv.buttons == 2) {
+			/*
 			int f;
 			f = menuhit(2, mc, &mmenu, nil);
 			if (f >= 0) mfunc[f](&rich);
+			*/
 			*mmode = MM_NONE;
 		} else if (mv.buttons == 4) {
 			int f;
-			Object *obj;
-			obj = getobj(mv.xy);
-			if ((obj != nil) && (obj->dlink->count > 0)) {
+			Elem *e;
+			e = getelem(mv.xy);
+			if ((e != nil) && (e->link != nil)) {
 				f = menuhit(3, mc, &rmenu, nil);
 				if (f >= 0) {
 					if (f >= rsize - 1) ruseract(f - rsize + 1);
-					else rfunc[f](obj);
+					else rfunc[f](e);
 				}
 			} else if (menubuf->count > 0) {
 				f = menuhit(3, mc, &rusermenu, nil);
@@ -366,7 +371,6 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 			*mmode = MM_NONE;
 		}
 		break;
-*/
 
 	case MM_SELECT:
 		break;
@@ -1012,4 +1016,25 @@ freeelem(Elem *e)
 	e->font = nil;
 	e->pos = ZP;
 	e->nlpos = ZP;
+}
+
+Elem *
+getelem(Point xy)
+{
+	int i;
+	Elem *e;
+	Point sp, np, ep;
+	for (i = 0; i < elems->count; i++) {
+		arrayget(elems, i, &e);
+		sp = e->pos;
+		np = e->nlpos;
+		ep = (e->next != nil) ? e->next->pos : Pt(rich.page.r.max.x, sp.y);
+		if (
+		  (xy.y >= sp.y) &&
+		  (xy.y <  np.y) &&
+		  (xy.x >= sp.x) &&
+		  (xy.x <  ep.x)
+		) return e;
+	}
+	return nil;
 }
