@@ -164,7 +164,7 @@ threadmain(int argc, char **argv)
 	char initmenu[] = "test\n";
 	arraygrow(menubuf, sizeof(initmenu), initmenu);
 
-	void *ov, *ov2;
+	void *ov;
 
 	enum {MOUSE, RESIZE, REDRAW, INSERT, KBD, AEND};
 	Alt alts[AEND + 1] = {
@@ -189,7 +189,7 @@ threadmain(int argc, char **argv)
 			break;
 		case REDRAW:
 
-			while (nbrecv(redrawc, &ov2) != 0) ov = ov2;
+			while (nbrecv(redrawc, &ov) != 0);
 
 			lockdisplay(display);
 			draw(screen, screen->r, Inormbg, nil, ZP);
@@ -915,6 +915,9 @@ drawtext(Elem *e)
 Point
 drawnl(Elem *e)
 {
+	if (e->nlpos.y <= e->pos.y) {
+		e->nlpos.y = e->pos.y + e->font->height;
+	}
 	/*
 	 * if (selected) Ibg = Isel;
 	 * else Ibg = Inormbg;
