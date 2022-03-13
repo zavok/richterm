@@ -13,30 +13,6 @@ usage(void)
 }
 
 void
-newobj(char *text, char *link)
-{
-	int id, fd;
-	long n;
-	char buf[1024];
-	fd = open("/mnt/richterm/new", OREAD);
-	if (fd < 0) sysfatal("newobj: %r");
-	n = read(fd, buf, 1024);
-	close(fd);
-	buf[n] = '\0';
-	id = atoi(buf);
-	snprint(buf, 1024, "/mnt/richterm/%d/text", id);
-	fd = open(buf, OWRITE);
-	write(fd, text, strlen(text));
-	close(fd);
-	if (link != nil) {
-		snprint(buf, 1024, "/mnt/richterm/%d/link", id);
-		fd = open(buf, OWRITE);
-		write(fd, link, strlen(link));
-		close(fd);
-	}
-}
-
-void
 printtext(char *buf, long size)
 {
 	Biobuf* bd;
@@ -49,19 +25,14 @@ printtext(char *buf, long size)
 void
 printmenu(char *buf, long size)
 {
-	int tfd;
-	char *rpath, *lbuf, *ls, *le, type, *port, *host, *path, url[1024];
+	char *lbuf, *ls, *le, type, *port, *host, *path, url[1024];
 	long lsize, n;
-
-	rpath = smprint("%s/text", rroot);
-	tfd = open(rpath, OWRITE);
-	if (tfd < 0) sysfatal("printmenu: can't open %s: %r", rpath);
-	
-	seek(tfd, 0, 2);
+	int urlblank;
 
 	ls = buf;
 	lsize = 1024;
 	lbuf = malloc(lsize);
+	urlblank = 0;
 	while (ls < buf + size) {
 		le = strchr(ls, '\n');
 		if (le == nil) break;
@@ -94,13 +65,20 @@ printmenu(char *buf, long size)
 			port = le + 1;
 			snprint(url, 1024, "gopher://%s:%s/%c%s", host, port, type, path);
 		}
-		// newobj("\n", nil);
-		fprint(tfd,
-		  "l%s\n"
-		  ".%s\n"
-		  "n\n",
-		  url, lbuf + 1
-		);
+
+		if (url[0] != '\0') {
+			print("l%s\n", url);
+			urlblank = 0;
+		} else if (urlblank == 0) {
+			print("l\n");
+			urlblank = 1;
+		}
+
+		if (lbuf[1] != '\0') {
+			print(".%s\n", lbuf + 1);
+		}
+
+		print("n\n");
 	}
 }
 

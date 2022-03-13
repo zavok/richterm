@@ -7,7 +7,7 @@ char *rroot = "/mnt/richterm";
 void
 main(int argc, char **argv)
 {
-	int fd, tfd;
+	int fd;
 	long i, n;
 	Dir *dp, *dbuf;
 	char *path, buf[4096];
@@ -24,23 +24,18 @@ main(int argc, char **argv)
 
 	if (dp->mode & DMDIR) {
 
-		char *rpath = smprint("%s/text", rroot);
-		tfd = open(rpath , OWRITE);
-		if (tfd < 0) sysfatal("can't open %s: %r", rpath);
-
 		dbuf = mallocz(DIRMAX, 1);
 		n = dirreadall(fd, &dbuf);
 
-		seek(tfd, 0, 2);
-		fprint(tfd, "l\nf\n");
+		print("l\nf\n");
 
 		for (i = 0; i < n; i++) {
 			char *spacer = "";
 			if (dbuf[i].mode & DMEXEC) spacer = "*";
 			if (dbuf[i].mode & DMDIR) spacer = "/";
 
-			fprint(tfd, "l%s\n.%s%s\nn\n", dbuf[i].name, dbuf[i].name, spacer);
+			print("l%s\n.%s%s\nn\n", dbuf[i].name, dbuf[i].name, spacer);
 		}
-		fprint(tfd, "l\n");
+		print("l\n");
 	} else sysfatal("not a directory");
 }
