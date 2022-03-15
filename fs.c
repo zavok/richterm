@@ -44,6 +44,7 @@ initfs(char *srvname)
 	rq = reqqueuecreate();
 	menubuf = arraycreate(sizeof(char), 1024, nil);
 	consc = chancreate(sizeof(Array *), 1024);
+	ctlc = chancreate(sizeof(Array *), 1024);
 
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	fsroot = srv.tree->root;
@@ -53,6 +54,9 @@ initfs(char *srvname)
 
 	consctl = createfile(fsroot, "consctl", "richterm", DMAPPEND|0666, 
 		fauxalloc(nil, nil, nil, nil, nil, nil));
+
+	ctl = createfile(fsroot, "ctl", "richterm", DMAPPEND|0666,
+		fauxalloc(nil, nil, ctlread, ctlwrite, nil, nil));
 
 	text = createfile(fsroot, "text", "richterm", 0666,
 		fauxalloc(richdata, arrayopen, arrayread, arraywrite, nil, nil));
@@ -81,7 +85,7 @@ fauxalloc(
 }
 
 void
-fs_destroyfid(Fid *fid)
+fs_destroyfid(Fid *)
 {
 }
 
@@ -220,6 +224,25 @@ conswrite(Req *r)
 	arraygrow(a, r->ifcall.count, r->ifcall.data);
 	nbsend(insertc, &a);
 	r->ofcall.count = r->ifcall.count;
+	respond(r, nil);
+}
 
+void
+ctlread(Req *r)
+{
+	Array *msg;
+
+	recv(ctlc, &msg);
+
+	r->ifcall.offset = 0;
+	readbuf(r, msg->p, msg->count);
+	arrayfree(msg);
+
+	respond(r, nil);
+}
+
+void
+ctlwrite(Req *r)
+{
 	respond(r, nil);
 }

@@ -574,41 +574,39 @@ rgen(int n)
 }
 
 void
-rfollow(void *)
+rfollow(void *v)
 {
+	Elem *e = (Elem *)v;
 
-/*
 	Array *a;
 	a = arraycreate(sizeof(char), 1024, nil);
 	arraygrow(a, 5, "link ");
-	arraygrow(a, obj->dlink->count, arrayget(obj->dlink, 0, nil));
+	arraygrow(a, strlen(e->link), e->link);
 	arraygrow(a, 1, "\n");
-	nbsend(ctlc, &a);
-*/
 
+	fprint(2, "rfollow: sending %p link %s\n", a, e->str);
+
+	nbsend(ctlc, &a);
 }
 
 void
-rsnarf(void *)
+rsnarf(void *v)
 {
+	Elem *e = (Elem *)v;
 
-/*
 	int fd;
 	long n;
 	if ((fd = open("/dev/snarf", OWRITE)) > 0) {
-		n = write(fd, arrayget(obj->dlink, 0, nil),
-		  obj->dlink->count);
-		if (n < obj->dlink->count) fprint(2, "rsnarf: %r\n");
+		n = write(fd, e->link, strlen(e->link));
+		if (n < strlen(e->link)) fprint(2, "rsnarf: %r\n");
 		close(fd);
 	}
-*/
-
 }
 
 void
-rplumb(void *)
+rplumb(void *v)
 {
-/*
+	Elem *e = (Elem *)v;
 
 	char buf[1024];
 	int pd;
@@ -620,14 +618,12 @@ rplumb(void *)
 			getwd(buf, sizeof(buf)),
 			"text",
 			nil,
-			obj->dlink->count,
-			arrayget(obj->dlink, 0, nil)
+			strlen(e->link),
+			e->link
 		};
 		plumbsend(pd, &m);
 		close(pd);
 	}
-*/
-
 }
 
 void
