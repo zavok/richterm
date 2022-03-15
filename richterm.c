@@ -584,8 +584,6 @@ rfollow(void *v)
 	arraygrow(a, strlen(e->link), e->link);
 	arraygrow(a, 1, "\n");
 
-	fprint(2, "rfollow: sending %p link %s\n", a, e->str);
-
 	nbsend(ctlc, &a);
 }
 
