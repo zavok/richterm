@@ -8,12 +8,12 @@ history=`{pwd}
 forward=()
 
 fn clear {
-	echo clear > $rroot/ctl
+	echo -n > $rroot/text
 }
 
 fn _exit {
 	clear
-	echo -n > $rroot/menu
+	# echo -n > $rroot/menu
 	exit
 }
 
@@ -21,8 +21,7 @@ fn ldir {
 	cd $1
 	history = (`{pwd} $history)
 	forward = ()
-	clear
-	Dir
+	Dir > $rroot/text
 }
 
 fn lmarkdown {
@@ -31,16 +30,15 @@ fn lmarkdown {
 	history = (`{pwd}^/$fname $history)
 	forward = ()
 	clear
-	Markdown $fname
+	cat $fname
 }
 
 fn lgopher {
 	history = ($1 $history)
 	forward = ()
-	clear
 	switch ($1) {
 	case *.md; Gopher $1 | Markdown
-	case *; Gopher $1
+	case *; Gopher $1 > $rroot/text
 	}
 }
 
@@ -82,16 +80,19 @@ fn link {
 		if (test -d $1) ldir $1
 		if not tryfile $1
 	}
+
+	# following echo is a hack around some race condition in richterm
+	echo
 }
 
-cat > $rroot/menu <<EOF
-----
-Back
-Exit
-EOF
+# cat > $rroot/menu <<EOF
+# ----
+# Back
+# Exit
+# EOF
 
 if (test -n $"1) link $1
-if not link .
+if not link `{pwd}
 
 event=''
 while ( { event=`{read $rroot/ctl} } ) {

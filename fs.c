@@ -41,10 +41,11 @@ initfs(char *srvname)
 		.destroyfid = fs_destroyfid,
 	};
 	consbuf = nil;
+	ctlbuf = nil;
 	rq = reqqueuecreate();
 	menubuf = arraycreate(sizeof(char), 1024, nil);
 	consc = chancreate(sizeof(Array *), 1024);
-	ctlc = chancreate(sizeof(Array *), 1024);
+	ctlc = chancreate(sizeof(Array *), 8);
 
 	srv.tree = alloctree("richterm", "richterm", DMDIR|0555, nil);
 	fsroot = srv.tree->root;
@@ -230,13 +231,16 @@ conswrite(Req *r)
 void
 ctlread(Req *r)
 {
-	Array *msg;
-
-	recv(ctlc, &msg);
-
+	if (ctlbuf == nil) recv(ctlc, &ctlbuf);
+	if (ctlbuf == nil) sysfatal("ctlread: ctlbuf is nil: %r");
 	r->ifcall.offset = 0;
-	readbuf(r, msg->p, msg->count);
-	arrayfree(msg);
+	readbuf(r, ctlbuf->p, ctlbuf->count);
+	if (arraydel(ctlbuf, 0, r->ofcall.count) != 0)
+		sysfatal("ctlread: %r");
+	if (ctlbuf->count == 0) {
+		arrayfree(ctlbuf);
+		ctlbuf = nil;
+	}
 
 	respond(r, nil);
 }

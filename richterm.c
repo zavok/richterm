@@ -580,6 +580,7 @@ rfollow(void *v)
 
 	Array *a;
 	a = arraycreate(sizeof(char), 1024, nil);
+	if (a == nil) sysfatal("rfollow: arraycreate failed: %r");
 	arraygrow(a, 5, "link ");
 	arraygrow(a, strlen(e->link), e->link);
 	arraygrow(a, 1, "\n");
@@ -637,7 +638,7 @@ ruseract(int f)
 	arraygrow(a, 5, "menu ");
 	arraygrow(a, strlen(s), s);
 	arraygrow(a, 1, "\n");
-	// nbsend(ctlc, &a);
+	nbsend(ctlc, &a);
 }
 
 

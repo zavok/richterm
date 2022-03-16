@@ -27,7 +27,7 @@ main(int argc, char **argv)
 		dbuf = mallocz(DIRMAX, 1);
 		n = dirreadall(fd, &dbuf);
 
-		print("l\nf\n");
+		print("f\nl..\n.../\nn\n");
 
 		for (i = 0; i < n; i++) {
 			char *spacer = "";
