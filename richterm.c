@@ -240,8 +240,6 @@ threadmain(int argc, char **argv)
 					euser->count = strlen(euser->str);
 					free(R);
 				} else if (kv == '\n') {
-
-					// TODO: send str as array to consc channel
 					Array *msg = arraycreate(sizeof(char), 0, nil);
 					if (euser->str != nil) {
 						arraygrow(msg, strlen(euser->str), euser->str);
