@@ -18,8 +18,13 @@ printtext(char *buf, long size)
 	Biobuf* bd;
 	long n;
 	bd = Bfdopen(1, OWRITE);
-	for (n = 0; n < size; n++)
-		if (buf[n] != '\r') Bputc(bd, buf[n]);
+	Bprint(bd, "f\nl\n" ".");
+	for (n = 0; n < size; n++) {
+		if (buf[n] == '\r') continue;
+		else if (buf[n] == '\n') Bprint(bd, "\n" "n\n" ".");
+		else Bputc(bd, buf[n]);
+	}
+	Bprint(bd, "\n");
 }
 
 void

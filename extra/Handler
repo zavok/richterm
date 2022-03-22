@@ -36,10 +36,7 @@ fn lmarkdown {
 fn lgopher {
 	history = ($1 $history)
 	forward = ()
-	switch ($1) {
-	case *.md; Gopher $1 | Markdown
-	case *; Gopher $1 > $rroot/text
-	}
+	Gopher $1 > $rroot/text
 }
 
 fn tryfile {
@@ -85,11 +82,11 @@ fn link {
 	echo
 }
 
-# cat > $rroot/menu <<EOF
-# ----
-# Back
-# Exit
-# EOF
+cat > $rroot/menu <<EOF
+----
+Back
+Exit
+EOF
 
 if (test -n $"1) link $1
 if not link `{pwd}

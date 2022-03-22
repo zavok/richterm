@@ -161,9 +161,6 @@ threadmain(int argc, char **argv)
 
 	threadsetname("main");
 
-	char initmenu[] = "test\n";
-	arraygrow(menubuf, sizeof(initmenu), initmenu);
-
 	void *ov;
 
 	enum {MOUSE, RESIZE, REDRAW, INSERT, KBD, AEND};
@@ -674,9 +671,7 @@ Array *elems;
 Array *richdata;
 Elem *euser;
 
-char *sampledata =
-	".We richterm now\n"
-	"n\n";
+char *sampledata = "";
 
 char *
 elemparse(Elem *e, char *str, long n)
