@@ -31,6 +31,10 @@ Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg, *Itext;
 
 char *srvname;
 
+Array *elems;
+Array *richdata;
+Elem *euser;
+
 void mpaste(Rich *);
 void msnarf(Rich *);
 void mplumb(Rich *);
@@ -131,8 +135,6 @@ threadmain(int argc, char **argv)
 	rich.l = mallocz(sizeof(QLock), 1);
 
 	qlock(rich.l);
-
-	rich.page.scroll = ZP;
 
 	rich.selmin = 0;
 	rich.selmax = 0;
@@ -294,21 +296,21 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 	}
 	if (mv.buttons == 8) {
 		scroll(
-		  Pt(0, rich.scroll - (mv.xy.y - rich.page.r.min.y)),
+		  Pt(0, rich.scroll - (mv.xy.y - rich.r.min.y)),
 		  &rich);
 		return;
 	}
 	if (mv.buttons == 16) {
 		scroll(
-		  Pt(0, rich.scroll + (mv.xy.y - rich.page.r.min.y)),
+		  Pt(0, rich.scroll + (mv.xy.y - rich.r.min.y)),
 		  &rich);
 		return;
 	}
 
 	if (*mmode == MM_NONE) {
-		if (ptinrect(mv.xy, rich.page.rs) != 0)
+		if (ptinrect(mv.xy, rich.rs) != 0)
 			*mmode = MM_SCROLLBAR;
-		if (ptinrect(mv.xy, rich.page.r) != 0)
+		if (ptinrect(mv.xy, rich.r) != 0)
 			*mmode = MM_TEXT;
 	}
 
@@ -317,18 +319,18 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 		if (mv.buttons == 1) {
 			scroll(
 			  subpt(Pt(0, rich.scroll),
-			  Pt(0, mv.xy.y - rich.page.r.min.y)),
+			  Pt(0, mv.xy.y - rich.r.min.y)),
 			  &rich);
 		} else if (mv.buttons == 2) {
 			scroll(
 			  Pt(0,
-			    (mv.xy.y - rich.page.r.min.y) *
-		  	    ((double)rich.page.max.y / Dy(rich.page.r))),
+			    (mv.xy.y - rich.r.min.y) *
+		  	    ((double)rich.max / Dy(rich.r))),
 		 	  &rich);
 		} else if (mv.buttons == 4) {
 			scroll(
 			  addpt(Pt(0, rich.scroll),
-			  Pt(0, mv.xy.y - rich.page.r.min.y)),
+			  Pt(0, mv.xy.y - rich.r.min.y)),
 			  &rich);
 		}
 		break;
@@ -429,18 +431,18 @@ drawscrollbar(void)
 {
 	double D;
 	Rectangle rs;
-	D =  (double)rich.max / (double)Dy(rich.page.r);
+	D =  (double)rich.max / (double)Dy(rich.r);
 	if (D != 0) {
 		rs = rectaddpt(Rect(
 		  0,  rich.scroll / D,
-		  11, (rich.scroll + Dy(rich.page.r)) / D
-		), rich.page.rs.min);
+		  11, (rich.scroll + Dy(rich.r)) / D
+		), rich.rs.min);
 	} else {
-		rs = rich.page.rs;
+		rs = rich.rs;
 		rs.max.x--;
 	};
 
-	draw(screen, rich.page.rs, Iscrollbar, nil, ZP);
+	draw(screen, rich.rs, Iscrollbar, nil, ZP);
 	draw(screen, rs, Inormbg, nil, ZP);
 }
 
@@ -499,11 +501,11 @@ send_interrupt(void)
 void
 resize(void)
 {
-	rich.page.rs = Rpt(
+	rich.rs = Rpt(
 	  addpt(Pt(1,1), screen->r.min),
 	  Pt(screen->r.min.x + 13, screen->r.max.y - 1)
 	);
-	rich.page.r = Rpt(
+	rich.r = Rpt(
 	  addpt(screen->r.min, Pt(17, 1)),
 	  subpt(screen->r.max, Pt(1,1))
 	);
@@ -517,7 +519,7 @@ mpaste(Rich *)
 	char buf[4096];
 	if ((fd = open("/dev/snarf", OREAD)) > 0) {
 		while((n = read(fd, buf, sizeof(buf))) > 0) {
-			arraygrow(rich.text, n, buf);
+			arraygrow(richdata, n, buf);
 		}
 		if (n < 0) fprint(2, "mpaste: %r\n");
 		close(fd);
@@ -532,7 +534,7 @@ msnarf(Rich *)
 	long n;
 	if ((rich.selmin < rich.selmax) &&
 	  ((fd = open("/dev/snarf", OWRITE)) > 0)) {
-		n = write(fd, arrayget(rich.text, rich.selmin, nil),
+		n = write(fd, arrayget(richdata, rich.selmin, nil),
 		  rich.selmax - rich.selmin);
 		if (n < rich.selmax - rich.selmin) fprint(2, "msnarf: %r\n");
 		close(fd);
@@ -553,7 +555,7 @@ mplumb(Rich *)
 			"text",
 			nil,
 			rich.selmax - rich.selmin,
-			arrayget(rich.text, rich.selmin, nil)
+			arrayget(richdata, rich.selmin, nil)
 		};
 		plumbsend(pd, &m);
 		close(pd);
@@ -663,14 +665,6 @@ rusergen(int f)
 	return genbuf;
 }
 
-/* **** New Code Beyond This Point **** */
-
-Array *elems;
-Array *richdata;
-Elem *euser;
-
-char *sampledata = "";
-
 char *
 elemparse(Elem *e, char *str, long n)
 {
@@ -682,9 +676,21 @@ elemparse(Elem *e, char *str, long n)
 	if (n <= 1) return nil;
 	ep = memchr(sp, '\n', n - 1);
 	if (ep == nil) return nil;
-	
+
+
 	e->type = type;
 	e->count = ep - sp;
+
+/*
+	switch(e->type) {
+	case E_NL:
+	case E_TAB:
+	case E_SPACE:
+		e->type = E_TEXT;
+		e->count = 1;
+		sp = str;
+	}
+*/
 
 	if (e->count > 0) {
 		e->str = malloc(e->count + 1);
@@ -693,6 +699,23 @@ elemparse(Elem *e, char *str, long n)
 	} else e->str = nil;
 
 	return ep + 1;
+}
+
+void
+text2runes(Elem *E, Array *elems)
+{
+	if (E->str == nil) return;
+	Rune *r = runesmprint("%s", E->str);
+	Rune *rp;
+	for (rp =r; *rp != L'\0'; rp++) {
+		Elem *e = mallocz(sizeof(Elem), 1);
+		e->type = E_TEXT;
+		e->str = smprint("%C", *rp);
+		e->count = strlen(e->str);
+		e->r = *rp;
+		arraygrow(elems, 1, &e);
+	}
+	free(r);
 }
 
 void
@@ -709,7 +732,10 @@ parsedata(Array *data, Array *elems)
 		e = mallocz(sizeof(Elem), 1);
 		dp = elemparse(e, dp, data->p + data->count - dp);
 		if (dp == nil) break;
-		arraygrow(elems, 1, &e);
+		if (e->type == E_TEXT) {
+			text2runes(e, elems);
+			freeelem(e);
+		} else arraygrow(elems, 1, &e);
 	}
 
 	qunlock(data->l);
@@ -768,16 +794,8 @@ elemsupdatecache(Array *elems)
 void
 generatesampleelems(void)
 {
-	long count;
-
 	elems = arraycreate(sizeof(Elem *), 128, nil);
-
-	count = strlen(sampledata);
-
-	richdata = arraycreate(sizeof(char), count, nil);
-	arraygrow(richdata, count, (void *)sampledata);
-
-	parsedata(richdata, elems);
+	richdata = arraycreate(sizeof(char), 1024, nil);
 
 	euser = mallocz(sizeof(Elem), 1);
 	euser->type = E_TEXT;
@@ -797,7 +815,7 @@ drawelems(void)
 	Point pos;
 	Elem *e;
 	e = nil;
-	pos = rich.page.r.min;
+	pos = rich.r.min;
 	pos.y -= rich.scroll;
 	for (i = 0; i < elems->count; i++) {
 		if (arrayget(elems, i, &e) == nil)
@@ -805,7 +823,7 @@ drawelems(void)
 		e->pos = pos;
 		pos = drawelem(e);
 	}
-	if (e != nil) rich.max = e->nlpos.y + rich.scroll - rich.page.r.min.y;
+	if (e != nil) rich.max = e->nlpos.y + rich.scroll - rich.r.min.y;
 	else rich.max = 0;
 }
 
@@ -816,7 +834,7 @@ drawelem(Elem *e)
 
 	static const Point (*dtable[256])(Elem *) = {
 		[E_NOOP]  drawnoop,
-		[E_TEXT]  drawtext,
+		[E_TEXT]  drawrune,
 		[E_FONT]  drawnoop,
 		[E_LINK]  drawnoop,
 		[E_IMAGE] drawnoop,
@@ -829,7 +847,7 @@ drawelem(Elem *e)
 
 	e->nlpos = (e->prev != nil) ?
 		e->prev->nlpos :
-		Pt(rich.page.r.min.x, rich.page.r.min.y + e->font->height - rich.scroll);
+		Pt(rich.r.min.x, rich.r.min.y + e->font->height - rich.scroll);
 
 	drawp = dtable[e->type];
 
@@ -840,6 +858,37 @@ drawelem(Elem *e)
 	}
 
 	return drawp(e);
+}
+
+Point
+drawrune(Elem *e)
+{
+	if (e->r == L'\t') return drawtab(e);
+	if (e->r == L'\n') return drawnl(e);
+
+	Point pos;
+	Image *fg;
+	int w;
+
+	if (e->font == nil) sysfatal("drawtext: e->font is nil!");
+
+	fg = (e->link != nil) ? Ilink : Itext;
+
+	if (e->nlpos.y < e->pos.y + e->font->height)
+		e->nlpos.y = e->pos.y + e->font->height;
+
+	pos = e->pos;
+	w = runestringnwidth(e->font, &e->r, 1);
+	if (pos.x + w > rich.r.max.x) {
+		pos = e->nlpos;
+		e->nlpos.y = pos.y + e->font->height;
+	}
+
+	if ((pos.y >= rich.r.min.y) && (pos.y <= rich.r.max.y)) {
+		runestringn(screen, pos, fg, ZP, e->font, &e->r, 1);
+	}
+	pos.x += w;
+	return pos;
 }
 
 Point
@@ -875,7 +924,7 @@ drawtext(Elem *e)
 		for (i = 0; i < n - s; i++) {
 			/* if (selection start) break; */
 			/* if (selection end)   break; */
-			if (pos.x + runestringnwidth(e->font, &R[s], i) > rich.page.r.max.x) {
+			if (pos.x + runestringnwidth(e->font, &R[s], i) > rich.r.max.x) {
 				i --;
 				nl = 1;
 				break;
@@ -937,10 +986,10 @@ drawtab(Elem *e)
 {
 	int x, tabw;
 	tabw = stringwidth(font, "0") * 4;
-	x = (e->pos.x - rich.page.r.min.x) / tabw;
+	x = (e->pos.x - rich.r.min.x) / tabw;
 	Point pos;
 	pos = e->pos;
-	pos.x = rich.page.r.min.x + (x + 1) * tabw;
+	pos.x = rich.r.min.x + (x + 1) * tabw;
 	return pos;
 }
 
@@ -1019,7 +1068,7 @@ getelem(Point xy)
 		arrayget(elems, i, &e);
 		sp = e->pos;
 		np = e->nlpos;
-		ep = (e->next != nil) ? e->next->pos : Pt(rich.page.r.max.x, sp.y);
+		ep = (e->next != nil) ? e->next->pos : Pt(rich.r.max.x, sp.y);
 		if (
 		  (xy.y >= sp.y) &&
 		  (xy.y <  np.y) &&
