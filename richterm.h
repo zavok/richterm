@@ -1,7 +1,16 @@
-typedef struct Rich Rich;
-typedef struct Faux Faux;
-typedef struct Token Token;
+typedef struct DrawState DrawState;
 typedef struct Elem Elem;
+typedef struct Faux Faux;
+typedef struct Rich Rich;
+typedef struct Token Token;
+
+struct DrawState {
+	int n;
+	Point pos;
+	Point nlpos;
+	char *link;
+	Font *font;
+};
 
 struct Rich {
 	QLock *l;
@@ -35,7 +44,7 @@ enum {
 	E_SPACE = 's',
 };
 
-enum {TRune, TFont, TLink, TImage};
+enum {TRune = '.', TFont = 'f', TLink = 'l', TImage = 'i'};
 
 struct Elem {
 	char type;
@@ -57,28 +66,25 @@ struct Elem {
 	Point nlpos;
 };
 
-extern Channel *redrawc;
-extern Channel *insertc;
+extern Array *elems;
+extern Array *fonts;
+extern Array *menubuf;
+extern Array *richdata;
 extern Channel *consc;
 extern Channel *ctlc;
-extern File *fsroot;
-extern Array *menubuf;
-extern Array *fonts;
-extern Rich rich;
-extern Array *elems;
-extern Array *richdata;
+extern Channel *insertc;
+extern Channel *redrawc;
 extern Elem *euser;
-
+extern File *fsroot;
+extern Rich rich;
 
 Faux * fauxalloc(Array *, void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Fid *));
 Font* getfont(Array *, char *);
-Point drawelem(Elem *);
-Point drawnl(Elem *);
-Point drawnoop(Elem *);
-Point drawspace(Elem *);
-Point drawtab(Elem *);
-// Point drawtext(Elem *);
-Point drawrune(Elem *);
+Point drawelem(DrawState *, Elem *);
+Point drawnl(DrawState *, Elem *);
+Point drawnoop(DrawState *, Elem *);
+Point drawtab(DrawState *, Elem *);
+Point drawrune(DrawState *, Elem *);
 char * elemparse(Elem *, char *, long);
 int initfs(char *);
 void drawelems(void);
