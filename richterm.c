@@ -142,9 +142,21 @@ threadmain(int argc, char **argv)
 	redrawc = chancreate(sizeof(void *), 8);
 	insertc = chancreate(sizeof(Array *), 8);
 
-	generatesampleelems();
-	rich.selmin = 10;
-	rich.selmax = 100;
+	elems = arraycreate(sizeof(Elem *), 128, nil);
+	richdata = arraycreate(sizeof(char), 1024, nil);
+
+	euser = mallocz(sizeof(Elem), 1);
+	euser->type = E_TEXT;
+	euser->str = nil;
+	euser->count = 0;
+
+	arraygrow(elems, 1, &euser);
+
+	elemslinklist(elems);
+	elemsupdatecache(elems);
+
+	rich.selmin = 0;
+	rich.selmax = 0;
 
 	resize();
 	draw(screen, screen->r, Inormbg, nil, ZP);
@@ -674,20 +686,25 @@ elemparse(Elem *e, char *str, long n)
 	e->type = type;
 	e->count = ep - sp;
 
-
 	switch(e->type) {
 	case E_NL:
 		e->type = E_TEXT;
 		e->count = 1;
 		e->r = L'\n';
+		e->str = strdup("\n");
+		break;
 	case E_TAB:
 		e->type = E_TEXT;
 		e->count = 1;
 		e->r = L'\t';
+		e->str = strdup("\t");
+		break;
 	case E_SPACE:
 		e->type = E_TEXT;
 		e->count = 1;
 		e->r = L' ';
+		e->str = strdup(" ");
+		break;
 	}
 
 	if (e->count > 0) {
@@ -730,7 +747,7 @@ parsedata(Array *data, Array *elems)
 		e = mallocz(sizeof(Elem), 1);
 		dp = elemparse(e, dp, data->p + data->count - dp);
 		if (dp == nil) break;
-		if (e->type == E_TEXT) {
+		if ((e->type == E_TEXT) && (e->count > 1)) {
 			text2runes(e->str, elems);
 			freeelem(e);
 		} else arraygrow(elems, 1, &e);
@@ -789,38 +806,22 @@ elemsupdatecache(Array *elems)
 	}
 }
 
-void
-generatesampleelems(void)
-{
-	elems = arraycreate(sizeof(Elem *), 128, nil);
-	richdata = arraycreate(sizeof(char), 1024, nil);
-
-	euser = mallocz(sizeof(Elem), 1);
-	euser->type = E_TEXT;
-	euser->str = nil;
-	euser->count = 0;
-
-	arraygrow(elems, 1, &euser);
-
-	elemslinklist(elems);
-	elemsupdatecache(elems);
-}
 
 void
 drawelems(void)
 {
-	long i;
 	DrawState ds;
 	Elem *e;
 	e = nil;
-	ds.pos = rich.r.min;
-	ds.pos.y -= rich.scroll;
-	for (i = 0; i < elems->count; i++) {
-		ds.n = i;
-		if (arrayget(elems, i, &e) == nil)
+	ds.pos = Pt(rich.r.min.x, rich.r.min.y - rich.scroll);
+	ds.nlpos = Pt(rich.r.min.x, ds.pos.y + font->height);
+
+	for (ds.n = 0; ds.n < elems->count; ds.n++) {
+		if (arrayget(elems, ds.n, &e) == nil)
 			sysfatal("drawelems: failed to get elem");
 		e->pos = ds.pos;
 		drawelem(&ds, e);
+		e->nlpos = ds.nlpos;
 	}
 	if (e != nil) rich.max = e->nlpos.y + rich.scroll - rich.r.min.y;
 	else rich.max = 0;
@@ -829,36 +830,16 @@ drawelems(void)
 Point
 drawelem(DrawState *ds, Elem *e)
 {
-	Point (*drawp)(DrawState *, Elem *);
-
-	static const Point (*dtable[256])(DrawState *, Elem *) = {
-		[E_NOOP]  drawnoop,
-		[E_TEXT]  drawrune,
-		[E_FONT]  drawnoop,
-		[E_LINK]  drawnoop,
-		[E_IMAGE] drawnoop,
-		[E_NL]    drawnoop,
-		[E_TAB]   drawnoop,
-		[E_SPACE] drawnoop,
-	};
-
 	if (e == nil) sysfatal("drawelem: e is nil");
+	if (e->type != E_TEXT) return ds->pos;
 
-	e->nlpos = (e->prev != nil) ?
+	/*
+	ds->nlpos = (e->prev != nil) ?
 		e->prev->nlpos :
 		Pt(rich.r.min.x, rich.r.min.y + e->font->height - rich.scroll);
+	*/
 
-	ds->nlpos = e->nlpos;
-
-	drawp = dtable[e->type];
-
-	if (drawp == nil) {
-		fprint(2, "drawelem: unknown elem type: 0x%uhhx '%c'\n", e->type, e->type);
-		e->type = E_NOOP;
-		drawp = drawnoop;
-	}
-
-	ds->pos = drawp(ds, e);
+	drawrune(ds, e);
 	return ds->pos;
 }
 
@@ -878,37 +859,38 @@ drawrune(DrawState *ds, Elem *e)
 	bg = ((ds->n >= rich.selmin) &&
 	  (ds->n < rich.selmax)) ? Iselbg : Inormbg;
 
-	if (e->nlpos.y < e->pos.y + e->font->height)
-		e->nlpos.y = e->pos.y + e->font->height;
+	if (ds->nlpos.y < ds->pos.y + e->font->height)
+		ds->nlpos.y = ds->pos.y + e->font->height;
 
-	pos = e->pos;
+	pos = ds->pos;
 	w = runestringnwidth(e->font, &e->r, 1);
 	if (pos.x + w > rich.r.max.x) {
-		pos = e->nlpos;
-		e->nlpos.y = pos.y + e->font->height;
+		pos = ds->nlpos;
+		ds->nlpos.y = pos.y + e->font->height;
 	}
 
 	if ((pos.y >= rich.r.min.y) && (pos.y <= rich.r.max.y)) {
 		runestringnbg(screen, pos, fg, ZP, e->font, &e->r, 1, bg, ZP);
 	}
 	pos.x += w;
-	return pos;
+	ds->pos = pos;
+	return ds->pos;
 }
 
 Point
 drawnl(DrawState *ds, Elem *e)
 {
-	if (e->nlpos.y <= e->pos.y) {
-		e->nlpos.y = e->pos.y + e->font->height;
-		ds->nlpos = e->nlpos;
+	if (ds->nlpos.y <= ds->pos.y) {
+		ds->nlpos.y = ds->pos.y + e->font->height;
+		ds->nlpos = ds->nlpos;
 	}
 
 	if ((ds->n >= rich.selmin) &&
 	  (ds->n < rich.selmax)) {
 		draw(screen, Rpt(ds->pos, Pt(rich.r.max.x, ds->nlpos.y)), Iselbg, nil, ZP);
 	}
-
-	return e->nlpos;
+	ds->pos = ds->nlpos;
+	return ds->pos;
 }
 
 Point
@@ -916,9 +898,9 @@ drawtab(DrawState *ds, Elem *e)
 {
 	int x, tabw;
 	tabw = stringwidth(font, "0") * 4;
-	x = (e->pos.x - rich.r.min.x) / tabw;
+	x = (ds->pos.x - rich.r.min.x) / tabw;
 	Point pos;
-	pos = e->pos;
+	pos = ds->pos;
 	pos.x = rich.r.min.x + (x + 1) * tabw;
 
 	if ((ds->n >= rich.selmin) &&
@@ -926,44 +908,39 @@ drawtab(DrawState *ds, Elem *e)
 		draw(screen, Rpt(ds->pos, Pt(pos.x, ds->nlpos.y)), Iselbg, nil, ZP);
 	}
 
-	return pos;
-}
-
-Point
-drawnoop(DrawState *, Elem *e)
-{
-	return e->pos;
+	ds->pos = pos;
+	return ds->pos;
 }
 
 void
 insertfromcons(Array *a)
 {
-	int i, nl;
-	qlock(a->l);
-	nl = 1;
-	for (i = 0; i < a->count; i++) {
-		if (nl != 0) {
-			arraygrow(richdata, 1, ".");
-			nl = 0;
-		}
+	int i;
 
+	if (a->count == 0) return;
+
+	qlock(a->l);
+
+	arraygrow(richdata, 1, ".");
+
+	for (i = 0; i < a->count; i++) {
 		switch (a->p[i]) {
-		case ' ':
-			arraygrow(richdata, 3, "\ns\n");
-			nl = 1;
-			break;
+		/*case ' ':
+			arraygrow(richdata, 4, "\ns\n.");
+			break;*/
 		case '\t':
-			arraygrow(richdata, 3, "\nt\n");
-			nl = 1;
+			arraygrow(richdata, 4, "\nt\n.");
 			break;
 		case '\n':
-			arraygrow(richdata, 3, "\nn\n");
-			nl = 1;
+			arraygrow(richdata, 4, "\nn\n.");
 			break;
 		default:
 			arraygrow(richdata, 1, a->p + i);
 		}
 	}
+
+	arraygrow(richdata, 1, "\n");
+
 	qunlock(a->l);
 
 	arrayfree(a);

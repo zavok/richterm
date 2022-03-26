@@ -82,7 +82,6 @@ Faux * fauxalloc(Array *, void (*)(Req *), void (*)(Req *), void (*)(Req *), voi
 Font* getfont(Array *, char *);
 Point drawelem(DrawState *, Elem *);
 Point drawnl(DrawState *, Elem *);
-Point drawnoop(DrawState *, Elem *);
 Point drawtab(DrawState *, Elem *);
 Point drawrune(DrawState *, Elem *);
 char * elemparse(Elem *, char *, long);
@@ -93,5 +92,4 @@ void drawscrollbar(void);
 void elemslinklist(Array *);
 void elemsupdatecache(Array *);
 void freeelem(Elem *);
-void generatesampleelems(void);
 void parsedata(Array *, Array *);
