@@ -50,18 +50,11 @@ enum {TRune = '.', TFont = 'f', TLink = 'l', TImage = 'i'};
 struct Elem {
 	char type;
 
-	char *str;
-	long count;
-
-	// union {
+	union {
 		Rune r;
+		char *str;
 		Image *image;
-	// };
-
-	Elem *next;
-
-	Point pos;
-	Point nlpos;
+	};
 };
 
 extern Array *elems;
@@ -80,14 +73,13 @@ Font* getfont(Array *, char *);
 Point drawnl(DrawState *, Elem *);
 Point drawrune(DrawState *, Elem *);
 Point drawtab(DrawState *, Elem *);
+Rectangle elemrect(DrawState *, Elem *);
 Rune * getrunes(long, long);
-char * elemparse(Elem *, char *, long);
 char * getlink(long n);
 int initfs(char *);
 void clearelems(void);
 void drawelems(void);
 void drawpage(Image *, Rich *);
 void drawscrollbar(void);
-void elemslinklist(Array *);
 void freeelem(Elem *);
 void parsedata(Array *, Array *);

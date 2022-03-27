@@ -146,8 +146,6 @@ threadmain(int argc, char **argv)
 	richdata = arraycreate(sizeof(char), 1024, nil);
 	drawcache = arraycreate(sizeof(DrawState), 1024, nil);
 
-	elemslinklist(elems);
-
 	rich.selmin = 0;
 	rich.selmax = 0;
 
@@ -238,15 +236,14 @@ threadmain(int argc, char **argv)
 						arrayget(elems, elems->count - 1, &edisc);
 						if (edisc == nil) break;
 						freeelem(edisc);
+						free(edisc);
 						arraydel(elems, elems->count - 1, 1);
-						elemslinklist(elems);
 					}
 				} else {
 					Elem *enew = mallocz(sizeof(Elem), 1);
 					enew->type = TRune;
 					enew->r = kv;
 					arraygrow(elems, 1, &enew);
-					elemslinklist(elems);
 				}
 				if (kv == '\n') {
 					Rune *r;
@@ -384,6 +381,7 @@ getfont(Array *fonts, char *name)
 	Font *newfont, *fnt;
 
 	if (name == nil) return font;
+	if (name[0] == '\0') return font;
 
 	for (i = 0; i < fonts->count; i++){
 		arrayget(fonts, i, &fnt);
@@ -663,56 +661,6 @@ rusergen(int f)
 	return genbuf;
 }
 
-char *
-elemparse(Elem *e, char *str, long n)
-{
-	int type;
-	char *sp, *ep, *buf;
-
-
-	type = str[0];
-	sp = str + 1;
-	if (n <= 1) return nil;
-	ep = memchr(sp, '\n', n - 1);
-	if (ep == nil) return nil;
-
-	e->type = type;
-	e->count = ep - sp;
-
-	if (ep == sp) buf = nil;
-	else {
-		buf = mallocz(ep - sp + 1, 1);
-		memcpy(buf, str + 1, ep - sp);
-	}
-
-	e->str = buf;
-
-	switch(e->type) {
-	case E_NL:
-		e->type = E_TEXT;
-		e->count = 1;
-		e->r = L'\n';
-		if (buf != nil) free(buf);
-		e->str = smprint("\n");
-		break;
-	case E_TAB:
-		e->type = E_TEXT;
-		e->count = 1;
-		e->r = L'\t';
-		if (buf != nil) free(buf);
-		e->str = smprint("\t");
-		break;
-	case E_SPACE:
-		e->type = E_TEXT;
-		e->count = 1;
-		e->r = L' ';
-		if (buf != nil) free(buf);
-		e->str = smprint(" ");
-		break;
-	}
-	return ep + 1;
-}
-
 void
 text2runes(char *str, Array *elems)
 {
@@ -722,8 +670,6 @@ text2runes(char *str, Array *elems)
 	for (rp = r; *rp != L'\0'; rp++) {
 		Elem *e = mallocz(sizeof(Elem), 1);
 		e->type = TRune;
-		e->str = smprint("%C", *rp);
-		e->count = strlen(e->str);
 		e->r = *rp;
 		arraygrow(elems, 1, &e);
 	}
@@ -734,40 +680,58 @@ void
 parsedata(Array *data, Array *elems)
 {
 	Elem *e;
+	long i;
 	char *dp;
+	Array *buf = arraycreate(sizeof(char), 80, nil);
 
 	qlock(data->l);
 
 	dp = data->p;
 
-	while (dp != nil) {
-		e = mallocz(sizeof(Elem), 1);
-		dp = elemparse(e, dp, data->p + data->count - dp);
-		if (dp == nil) break;
-		if ((e->type == E_TEXT) && (e->count > 1)) {
-			text2runes(e->str, elems);
-			freeelem(e);
-			free(e);
-		} else arraygrow(elems, 1, &e);
+	for (i = 0; i < data->count; i++) {
+		if (dp[i] != '\n') arraygrow(buf, 1, dp + i);
+		else {
+			arraygrow(buf, 1, "\0");
+			e = nil;
+			switch(buf->p[0]) {
+			case E_TEXT:
+				text2runes(buf->p + 1, elems);
+				break;
+			case E_NL:
+				e = malloc(sizeof(Elem));
+				e->type = TRune;
+				e->r = L'\n';
+				break;
+			case E_TAB:
+				e = malloc(sizeof(Elem));
+				e->type = TRune;
+				e->r = L'\t';
+				break;
+			case E_SPACE:
+				e = malloc(sizeof(Elem));
+				e->type = TRune;
+				e->r = L' ';
+				break;
+			case E_LINK:
+				e = malloc(sizeof(Elem));
+				e->type = TLink;
+				e->str = strdup(buf->p + 1);
+				break;
+			case E_FONT:
+				e = malloc(sizeof(Elem));
+				e->type = TFont;
+				e->str = strdup(buf->p + 1);
+				break;
+			}
+
+			if (e != nil) arraygrow(elems, 1, &e);
+			buf->count = 0;
+		}
 	}
 
 	qunlock(data->l);
-}
 
-void
-elemslinklist(Array *elems)
-{
-	Elem *e, *eold;
-	long i;
-
-	e = nil;
-
-	for (i = 0; i < elems->count; i++) {
-		eold = e;
-		arrayget(elems, i, &e);
-
-		if (eold != nil) eold->next = e;
-	}
+	arrayfree(buf);
 }
 
 void
@@ -785,7 +749,6 @@ drawelems(void)
 		if (arrayget(elems, ds.n, &e) == nil)
 			sysfatal("drawelems: failed to get elem");
 		
-		e->pos = ds.pos;
 		switch (e->type) {
 		case TLink:
 			ds.link = e->str;
@@ -797,10 +760,8 @@ drawelems(void)
 			drawrune(&ds, e);
 			break;
 		}
-
-		e->nlpos = ds.nlpos;
 	}
-	if (e != nil) rich.max = e->nlpos.y + rich.scroll - rich.r.min.y;
+	if (e != nil) rich.max = ds.nlpos.y + rich.scroll - rich.r.min.y;
 	else rich.max = 0;
 }
 
@@ -915,7 +876,6 @@ insertfromcons(Array *a)
 		arraygrow(elems, 1, &e);
 	}
 	free(r);
-	elemslinklist(elems);
 
 	nbsend(redrawc, nil);
 }
@@ -924,7 +884,12 @@ void
 freeelem(Elem *e)
 {
 	if (e == nil) sysfatal("freeelem: elem is nil!");
-	if (e->str != nil) free(e->str);
+	switch(e->type) {
+	case TLink:
+	case TFont:
+		if (e->str != nil) free(e->str);
+		break;
+	}
 }
 
 void
@@ -944,19 +909,40 @@ int
 getelem(Point xy)
 {
 	int i;
-	Elem *e;
-	Point sp, np, ep;
+
+	DrawState ds;
+	ds.pos = Pt(rich.r.min.x, rich.r.min.y - rich.scroll);
+	ds.nlpos = Pt(rich.r.min.x, ds.pos.y + font->height);
+	ds.font = font;
+	ds.link = nil;
+
 	for (i = 0; i < elems->count; i++) {
+
+		if (ds.pos.y > rich.r.max.y) {
+			return -1;
+		}
+		if (ds.pos.y > xy.y) {
+			return i - 1;
+		}
+
+		Elem *e;
 		arrayget(elems, i, &e);
-		sp = e->pos;
-		np = e->nlpos;
-		ep = (e->next != nil) ? e->next->pos : Pt(rich.r.max.x, sp.y);
-		if (
-		  (xy.y >= sp.y) &&
-		  (xy.y <  np.y) &&
-		  (xy.x >= sp.x) &&
-		  (xy.x <  ep.x)
-		) return i;
+
+		if (e->type == TFont) {
+			ds.font = getfont(fonts, e->str);
+			continue;
+		}
+		if (e->type == TLink) continue;
+
+		Rectangle r = elemrect(&ds, e);
+		if (ptinrect(xy, r) != 0) {
+			return i;
+		}
+
+		ds.pos.x = r.max.x;
+		if (ds.nlpos.y < r.max.y) ds.nlpos.y = r.max.y;
+		if (ds.pos.x >= rich.r.max.x) ds.pos = ds.nlpos;
+
 	}
 	return -1;
 }
@@ -987,4 +973,35 @@ getlink(long n)
 		if (e->type == TLink) return e->str;
 	}
 	return nil;
+}
+
+
+Rectangle
+elemrect(DrawState *ds, Elem *e)
+{
+	Rectangle r;
+	int tabw;
+	Rune rbuf[2];
+
+	if (e->type != TRune) return Rpt(ds->pos, ds->pos);
+
+	rbuf[0] = e->r;
+	rbuf[1] = L'\0';
+
+	switch(rbuf[0]) {
+	case L'\n':
+		r.max.x = rich.r.max.x;
+		break;
+	case L'\t':
+		tabw = stringnwidth(font, "0", 1) * 4;
+		r.max.x = rich.r.min.x + ((ds->pos.x - rich.r.min.x) / tabw + 1) * tabw;
+		break;
+	default:
+		r.max.x = ds->pos.x + runestringnwidth(ds->font, rbuf, 1);
+	}
+
+	r.min = ds->pos;
+	r.max.y = ds->pos.y + ds->font->height;
+
+	return r;
 }
