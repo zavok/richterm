@@ -70,9 +70,7 @@ extern Rich rich;
 
 Faux * fauxalloc(Array *, void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Fid *));
 Font* getfont(Array *, char *);
-Point drawnl(DrawState *, Elem *);
 Point drawrune(DrawState *, Elem *);
-Point drawtab(DrawState *, Elem *);
 Rectangle elemrect(DrawState *, Elem *);
 Rune * getrunes(long, long);
 char * getlink(long n);

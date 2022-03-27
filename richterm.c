@@ -768,72 +768,29 @@ drawelems(void)
 Point
 drawrune(DrawState *ds, Elem *e)
 {
-	if (e->r == L'\t') return drawtab(ds, e);
-	if (e->r == L'\n') return drawnl(ds, e);
+	Rectangle r = elemrect(ds, e);
 
-	Point pos;
 	Image *fg, *bg;
-	int w;
 
-	Rune r[2];
-	r[0] = e->r;
-	r[1] = L'\0';
+	Rune R[2];
+	R[0] = e->r;
+	R[1] = L'\0';
+
+	if ((e->r == L'\t') || (e->r == L'\n')) R[0] = L' ';
 
 	fg = (ds->link != nil) ? Ilink : Itext;
 	bg = ((ds->n >= rich.selmin) &&
 	  (ds->n < rich.selmax)) ? Iselbg : Inormbg;
 
-	if (ds->nlpos.y < ds->pos.y + ds->font->height)
-		ds->nlpos.y = ds->pos.y + ds->font->height;
-
-	pos = ds->pos;
-
-	w = runestringnwidth(ds->font, r, 1);
-	if (pos.x + w > rich.r.max.x) {
-		pos = ds->nlpos;
-		ds->nlpos.y = pos.y + ds->font->height;
+	if ((ds->pos.y >= rich.r.min.y - ds->font->height) && (ds->pos.y <= rich.r.max.y)) {
+		if (bg == Iselbg) draw(screen, r, bg, nil, ZP);
+		runestringn(screen, ds->pos, fg, ZP, ds->font, R, 1);
 	}
 
-	if ((pos.y >= rich.r.min.y - ds->font->height) && (pos.y <= rich.r.max.y)) {
-		runestringnbg(screen, pos, fg, ZP, ds->font, r, 1, bg, ZP);
-	}
-	pos.x += w;
-	ds->pos = pos;
-	return ds->pos;
-}
+	ds->pos.x = r.max.x;
+	if (ds->nlpos.y < r.max.y) ds->nlpos.y = r.max.y;
+	if (ds->pos.x >= rich.r.max.x) ds->pos = ds->nlpos;
 
-Point
-drawnl(DrawState *ds, Elem *)
-{
-	if (ds->nlpos.y <= ds->pos.y) {
-		ds->nlpos.y = ds->pos.y + ds->font->height;
-		ds->nlpos = ds->nlpos;
-	}
-
-	if ((ds->n >= rich.selmin) &&
-	  (ds->n < rich.selmax)) {
-		draw(screen, Rpt(ds->pos, Pt(rich.r.max.x, ds->nlpos.y)), Iselbg, nil, ZP);
-	}
-	ds->pos = ds->nlpos;
-	return ds->pos;
-}
-
-Point
-drawtab(DrawState *ds, Elem *)
-{
-	int x, tabw;
-	tabw = stringwidth(font, "0") * 4;
-	x = (ds->pos.x - rich.r.min.x) / tabw;
-	Point pos;
-	pos = ds->pos;
-	pos.x = rich.r.min.x + (x + 1) * tabw;
-
-	if ((ds->n >= rich.selmin) &&
-	  (ds->n < rich.selmax)) {
-		draw(screen, Rpt(ds->pos, Pt(pos.x, ds->nlpos.y)), Iselbg, nil, ZP);
-	}
-
-	ds->pos = pos;
 	return ds->pos;
 }
 
