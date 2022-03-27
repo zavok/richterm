@@ -147,7 +147,6 @@ threadmain(int argc, char **argv)
 	drawcache = arraycreate(sizeof(DrawState), 1024, nil);
 
 	elemslinklist(elems);
-	elemsupdatecache(elems);
 
 	rich.selmin = 0;
 	rich.selmax = 0;
@@ -241,16 +240,13 @@ threadmain(int argc, char **argv)
 						freeelem(edisc);
 						arraydel(elems, elems->count - 1, 1);
 						elemslinklist(elems);
-						elemsupdatecache(elems);
 					}
 				} else {
 					Elem *enew = mallocz(sizeof(Elem), 1);
 					enew->type = TRune;
 					enew->r = kv;
-					enew->font = font;
 					arraygrow(elems, 1, &enew);
 					elemslinklist(elems);
-					elemsupdatecache(elems);
 				}
 				if (kv == '\n') {
 					Rune *r;
@@ -343,14 +339,14 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 		} else if (mv.buttons == 4) {
 			int f;
 			int n;
-			Elem *e = nil;
+			char *link;
 			n = getelem(mv.xy);
-			if (n >= 0) arrayget(elems, n, &e);
-			if ((e != nil) && (e->link != nil)) {
+			link =  getlink(n);
+			if (link != nil) {
 				f = menuhit(3, mc, &rmenu, nil);
 				if (f >= 0) {
 					if (f >= rsize - 1) ruseract(f - rsize + 1);
-					else rfunc[f](e);
+					else rfunc[f](link);
 				}
 			} else if (menubuf->count > 0) {
 				f = menuhit(3, mc, &rusermenu, nil);
@@ -386,6 +382,9 @@ getfont(Array *fonts, char *name)
 {
 	int i;
 	Font *newfont, *fnt;
+
+	if (name == nil) return font;
+
 	for (i = 0; i < fonts->count; i++){
 		arrayget(fonts, i, &fnt);
 		if (strcmp(fnt->name, name) == 0) return fnt;
@@ -574,13 +573,13 @@ rgen(int n)
 void
 rfollow(void *v)
 {
-	Elem *e = (Elem *)v;
+	char *link = (char *)v;
 
 	Array *a;
 	a = arraycreate(sizeof(char), 1024, nil);
 	if (a == nil) sysfatal("rfollow: arraycreate failed: %r");
 	arraygrow(a, 5, "link ");
-	arraygrow(a, strlen(e->link), e->link);
+	arraygrow(a, strlen(link), link);
 	arraygrow(a, 1, "\n");
 
 	nbsend(ctlc, &a);
@@ -589,13 +588,13 @@ rfollow(void *v)
 void
 rsnarf(void *v)
 {
-	Elem *e = (Elem *)v;
+	char *link = (char *)v;
 
 	int fd;
 	long n;
 	if ((fd = open("/dev/snarf", OWRITE)) > 0) {
-		n = write(fd, e->link, strlen(e->link));
-		if (n < strlen(e->link)) fprint(2, "rsnarf: %r\n");
+		n = write(fd, link, strlen(link));
+		if (n < strlen(link)) fprint(2, "rsnarf: %r\n");
 		close(fd);
 	}
 }
@@ -603,7 +602,7 @@ rsnarf(void *v)
 void
 rplumb(void *v)
 {
-	Elem *e = (Elem *)v;
+	char *link = (char *)v;
 
 	char buf[1024];
 	int pd;
@@ -615,8 +614,8 @@ rplumb(void *v)
 			getwd(buf, sizeof(buf)),
 			"text",
 			nil,
-			strlen(e->link),
-			e->link
+			strlen(link),
+			link
 		};
 		plumbsend(pd, &m);
 		close(pd);
@@ -743,12 +742,12 @@ parsedata(Array *data, Array *elems)
 
 	while (dp != nil) {
 		e = mallocz(sizeof(Elem), 1);
-		e->font = font;
 		dp = elemparse(e, dp, data->p + data->count - dp);
 		if (dp == nil) break;
 		if ((e->type == E_TEXT) && (e->count > 1)) {
 			text2runes(e->str, elems);
 			freeelem(e);
+			free(e);
 		} else arraygrow(elems, 1, &e);
 	}
 
@@ -772,39 +771,6 @@ elemslinklist(Array *elems)
 }
 
 void
-elemsupdatecache(Array *elems)
-{
-	Elem *e;
-	char *link;
-	Font *fnt;
-	long i;
-
-	link = nil;
-	fnt = font;
-
-	for (i = 0; i < elems->count; i++) {
-		arrayget(elems, i, &e);
-		switch(e->type) {
-		case E_LINK:
-			if (e->str != nil) link = strdup(e->str);
-			else link = nil;
-			break;
-		case E_FONT:
-			if (e->str != nil) fnt = getfont(fonts, e->str);
-			else fnt = font;
-			break;
-		case E_IMAGE:
-			/* load image
-			 * e->image = image
-			 */
-			break;
-		}
-		e->link = link;
-		e->font = fnt;
-	}
-}
-
-void
 drawelems(void)
 {
 	DrawState ds;
@@ -812,26 +778,30 @@ drawelems(void)
 	e = nil;
 	ds.pos = Pt(rich.r.min.x, rich.r.min.y - rich.scroll);
 	ds.nlpos = Pt(rich.r.min.x, ds.pos.y + font->height);
+	ds.font = font;
+	ds.link = nil;
 
 	for (ds.n = 0; ds.n < elems->count; ds.n++) {
 		if (arrayget(elems, ds.n, &e) == nil)
 			sysfatal("drawelems: failed to get elem");
+		
 		e->pos = ds.pos;
-		drawelem(&ds, e);
+		switch (e->type) {
+		case TLink:
+			ds.link = e->str;
+			break;
+		case TFont:
+			ds.font = getfont(fonts, e->str);
+			break;
+		case TRune:
+			drawrune(&ds, e);
+			break;
+		}
+
 		e->nlpos = ds.nlpos;
 	}
 	if (e != nil) rich.max = e->nlpos.y + rich.scroll - rich.r.min.y;
 	else rich.max = 0;
-}
-
-Point
-drawelem(DrawState *ds, Elem *e)
-{
-	if (e == nil) sysfatal("drawelem: e is nil");
-	if (e->type != E_TEXT) return ds->pos;
-
-	drawrune(ds, e);
-	return ds->pos;
 }
 
 Point
@@ -844,26 +814,27 @@ drawrune(DrawState *ds, Elem *e)
 	Image *fg, *bg;
 	int w;
 
-	if (e->font == nil) {
-		sysfatal("drawrune: e->font is nil! [%d]%c%C", ds->n, e->type, e->r);
-	}
+	Rune r[2];
+	r[0] = e->r;
+	r[1] = L'\0';
 
-	fg = (e->link != nil) ? Ilink : Itext;
+	fg = (ds->link != nil) ? Ilink : Itext;
 	bg = ((ds->n >= rich.selmin) &&
 	  (ds->n < rich.selmax)) ? Iselbg : Inormbg;
 
-	if (ds->nlpos.y < ds->pos.y + e->font->height)
-		ds->nlpos.y = ds->pos.y + e->font->height;
+	if (ds->nlpos.y < ds->pos.y + ds->font->height)
+		ds->nlpos.y = ds->pos.y + ds->font->height;
 
 	pos = ds->pos;
-	w = runestringnwidth(e->font, &e->r, 1);
+
+	w = runestringnwidth(ds->font, r, 1);
 	if (pos.x + w > rich.r.max.x) {
 		pos = ds->nlpos;
-		ds->nlpos.y = pos.y + e->font->height;
+		ds->nlpos.y = pos.y + ds->font->height;
 	}
 
-	if ((pos.y >= rich.r.min.y) && (pos.y <= rich.r.max.y)) {
-		runestringnbg(screen, pos, fg, ZP, e->font, &e->r, 1, bg, ZP);
+	if ((pos.y >= rich.r.min.y - ds->font->height) && (pos.y <= rich.r.max.y)) {
+		runestringnbg(screen, pos, fg, ZP, ds->font, r, 1, bg, ZP);
 	}
 	pos.x += w;
 	ds->pos = pos;
@@ -871,10 +842,10 @@ drawrune(DrawState *ds, Elem *e)
 }
 
 Point
-drawnl(DrawState *ds, Elem *e)
+drawnl(DrawState *ds, Elem *)
 {
 	if (ds->nlpos.y <= ds->pos.y) {
-		ds->nlpos.y = ds->pos.y + e->font->height;
+		ds->nlpos.y = ds->pos.y + ds->font->height;
 		ds->nlpos = ds->nlpos;
 	}
 
@@ -933,12 +904,7 @@ insertfromcons(Array *a)
 	arrayfree(a);
 
 	Rune *r = getrunes(rich.input, elems->count);
-	for (i = 0; i < elems->count; i++) {
-		Elem *e;
-		arrayget(elems, 1, &e);
-		freeelem(e);
-	};
-	elems->count = 0;
+	clearelems();
 
 	parsedata(richdata, elems);
 	rich.input = elems->count;
@@ -946,12 +912,10 @@ insertfromcons(Array *a)
 		Elem *e = mallocz(sizeof(Elem), 1);
 		e->type = TRune;
 		e->r = r[i];
-		e->font = font;
 		arraygrow(elems, 1, &e);
 	}
 	free(r);
 	elemslinklist(elems);
-	elemsupdatecache(elems);
 
 	nbsend(redrawc, nil);
 }
@@ -960,9 +924,20 @@ void
 freeelem(Elem *e)
 {
 	if (e == nil) sysfatal("freeelem: elem is nil!");
+	if (e->str != nil) free(e->str);
+}
 
-	e->str  = realloc(e->str, 0);
-	e->link = realloc(e->link, 0);
+void
+clearelems(void)
+{
+	int i;
+	for (i = 0; i < elems->count; i++) {
+		Elem *e;
+		arrayget(elems, i, &e);
+		freeelem(e);
+		free(e);
+	};
+	elems->count = 0;
 }
 
 int
@@ -1001,4 +976,15 @@ getrunes(long start, long end)
 	}
 	r[n] = L'\0';
 	return r;
+}
+
+char *
+getlink(long n)
+{
+	for (;n >= 0; n--) {
+		Elem *e;
+		arrayget(elems, n, &e);
+		if (e->type == TLink) return e->str;
+	}
+	return nil;
 }

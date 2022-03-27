@@ -55,8 +55,6 @@ struct Elem {
 
 	// union {
 		Rune r;
-		char *link;
-		Font *font;
 		Image *image;
 	// };
 
@@ -79,17 +77,17 @@ extern Rich rich;
 
 Faux * fauxalloc(Array *, void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Req *), void (*)(Fid *));
 Font* getfont(Array *, char *);
-Point drawelem(DrawState *, Elem *);
 Point drawnl(DrawState *, Elem *);
-Point drawtab(DrawState *, Elem *);
 Point drawrune(DrawState *, Elem *);
+Point drawtab(DrawState *, Elem *);
 Rune * getrunes(long, long);
 char * elemparse(Elem *, char *, long);
+char * getlink(long n);
 int initfs(char *);
+void clearelems(void);
 void drawelems(void);
 void drawpage(Image *, Rich *);
 void drawscrollbar(void);
 void elemslinklist(Array *);
-void elemsupdatecache(Array *);
 void freeelem(Elem *);
 void parsedata(Array *, Array *);
