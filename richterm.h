@@ -18,6 +18,7 @@ struct Rich {
 	u64int idcount;
 	long selmin;
 	long selmax;
+	long input;
 	Rectangle r;
 	Rectangle rs;
 	int scroll;
@@ -60,7 +61,6 @@ struct Elem {
 	// };
 
 	Elem *next;
-	Elem *prev;
 
 	Point pos;
 	Point nlpos;
@@ -74,7 +74,6 @@ extern Channel *consc;
 extern Channel *ctlc;
 extern Channel *insertc;
 extern Channel *redrawc;
-extern Elem *euser;
 extern File *fsroot;
 extern Rich rich;
 
@@ -84,6 +83,7 @@ Point drawelem(DrawState *, Elem *);
 Point drawnl(DrawState *, Elem *);
 Point drawtab(DrawState *, Elem *);
 Point drawrune(DrawState *, Elem *);
+Rune * getrunes(long, long);
 char * elemparse(Elem *, char *, long);
 int initfs(char *);
 void drawelems(void);
