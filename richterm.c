@@ -668,45 +668,49 @@ char *
 elemparse(Elem *e, char *str, long n)
 {
 	int type;
-	char *sp, *ep;
+	char *sp, *ep, *buf;
 
-	type = *str;
+
+	type = str[0];
 	sp = str + 1;
 	if (n <= 1) return nil;
 	ep = memchr(sp, '\n', n - 1);
 	if (ep == nil) return nil;
 
-
 	e->type = type;
 	e->count = ep - sp;
+
+	if (ep == sp) buf = nil;
+	else {
+		buf = mallocz(ep - sp + 1, 1);
+		memcpy(buf, str + 1, ep - sp);
+	}
+
+	e->str = buf;
 
 	switch(e->type) {
 	case E_NL:
 		e->type = E_TEXT;
 		e->count = 1;
 		e->r = L'\n';
-		e->str = strdup("\n");
+		if (buf != nil) free(buf);
+		e->str = smprint("\n");
 		break;
 	case E_TAB:
 		e->type = E_TEXT;
 		e->count = 1;
 		e->r = L'\t';
-		e->str = strdup("\t");
+		if (buf != nil) free(buf);
+		e->str = smprint("\t");
 		break;
 	case E_SPACE:
 		e->type = E_TEXT;
 		e->count = 1;
 		e->r = L' ';
-		e->str = strdup(" ");
+		if (buf != nil) free(buf);
+		e->str = smprint(" ");
 		break;
 	}
-
-	if (e->count > 0) {
-		e->str = malloc(e->count + 1);
-		memcpy(e->str, sp, e->count);
-		e->str[e->count] = '\0';
-	} else e->str = nil;
-
 	return ep + 1;
 }
 
@@ -718,7 +722,7 @@ text2runes(char *str, Array *elems)
 	Rune *rp;
 	for (rp = r; *rp != L'\0'; rp++) {
 		Elem *e = mallocz(sizeof(Elem), 1);
-		e->type = E_TEXT;
+		e->type = TRune;
 		e->str = smprint("%C", *rp);
 		e->count = strlen(e->str);
 		e->r = *rp;
@@ -739,6 +743,7 @@ parsedata(Array *data, Array *elems)
 
 	while (dp != nil) {
 		e = mallocz(sizeof(Elem), 1);
+		e->font = font;
 		dp = elemparse(e, dp, data->p + data->count - dp);
 		if (dp == nil) break;
 		if ((e->type == E_TEXT) && (e->count > 1)) {
@@ -781,7 +786,8 @@ elemsupdatecache(Array *elems)
 		arrayget(elems, i, &e);
 		switch(e->type) {
 		case E_LINK:
-			link = e->str;
+			if (e->str != nil) link = strdup(e->str);
+			else link = nil;
 			break;
 		case E_FONT:
 			if (e->str != nil) fnt = getfont(fonts, e->str);
@@ -793,12 +799,10 @@ elemsupdatecache(Array *elems)
 			 */
 			break;
 		}
-
 		e->link = link;
 		e->font = fnt;
 	}
 }
-
 
 void
 drawelems(void)
@@ -957,14 +961,8 @@ freeelem(Elem *e)
 {
 	if (e == nil) sysfatal("freeelem: elem is nil!");
 
-	e->str = realloc(e->str, 0);
-	e->count = 0;
-	e->next = nil;
+	e->str  = realloc(e->str, 0);
 	e->link = realloc(e->link, 0);
-	if (e->image != nil) freeimage(e->image);
-	e->font = nil;
-	e->pos = ZP;
-	e->nlpos = ZP;
 }
 
 int
