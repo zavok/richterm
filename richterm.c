@@ -715,12 +715,14 @@ parsedata(Array *data, Array *elems)
 			case E_LINK:
 				e = malloc(sizeof(Elem));
 				e->type = TLink;
-				e->str = strdup(buf->p + 1);
+				e->str = (buf->p[1] != '\0') ? 
+					strdup(buf->p + 1) : nil;
 				break;
 			case E_FONT:
 				e = malloc(sizeof(Elem));
 				e->type = TFont;
-				e->str = strdup(buf->p + 1);
+				e->str = (buf->p[1] != '\0') ? 
+					strdup(buf->p + 1) : nil;
 				break;
 			}
 
