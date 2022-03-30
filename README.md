@@ -45,25 +45,27 @@ and user menu managed by `/menu` file.
 
 # Extra
 
-Handler is a rc script that handles richterm's link and menu events.
+`Handler` is an rc script that handles richterm's link and menu events.
 It tries to open links in appropriate programs or sends them to
 plumber.
 
-For now, two programs are provided: Dir and Gopher:
+For now, three programs are provided: `Dir`, `Gopher` and `Gemini`:
 
-Dir prints direcrory listing, supplied with appropriate link for
+`Dir` prints direcrory listing, supplied with appropriate link for
 every line.
 
-Gopher prints gopher menus and text files from supplied gopher URL.
+`Gopher` prints gopher menus and text files from supplied gopher URL.
 
-In addition, Handler manages primitive link history via 'Back' option in
+`Gemini` does the same for gemini URLs.
+
+In addition, `Handler` manages primitive link history via 'Back' option in
 user menu.
 
 # Installation
 
 The usual `mk install` invocation will install richterm binary
 into `/$cputype/bin directory` and extra binaries and scripts into
-`/sys/lib/richterm/bin/...` directories
+`/sys/lib/richterm/bin/...` directories.
 
 `/sys/lib/richterm/bin/...` will be bound over `/bin` by richterm
 automatically.
