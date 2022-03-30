@@ -39,6 +39,12 @@ fn lgopher {
 	Gopher $1 > $rroot/text
 }
 
+fn lgemini {
+	history = ($1 $history)
+	forward = ()
+	Gemini $1 > $rroot/text
+}
+
 fn tryfile {
 	type=`{file -m $1}
 	switch ($type) {
@@ -68,6 +74,7 @@ fn link {
 	case https://*; plumb $1
 	case http://*; plumb $1
 	case gopher://*; lgopher $1
+	case gemini://*; lgemini $1
 	case *.md; lmarkdown $1
 	case *.html
 		md=`{echo $1|sed 's/\.html/\.md/'}

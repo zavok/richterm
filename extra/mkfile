@@ -4,6 +4,7 @@ TARG=\
 	Markdown\
 	Dir\
 	Gopher\
+	Gemini\
 
 SYSLIB=/sys/lib/richterm
 BIN=$SYSLIB/bin/$cputype
