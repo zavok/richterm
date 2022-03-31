@@ -748,9 +748,12 @@ drawelems(void)
 	Elem *e;
 	e = nil;
 	ds.pos = Pt(rich.r.min.x, rich.r.min.y - rich.scroll);
-	ds.nlpos = Pt(rich.r.min.x, ds.pos.y + font->height);
+	ds.nlpos = ds.pos; // Pt(rich.r.min.x, ds.pos.y + font->height);
 	ds.font = font;
 	ds.link = nil;
+
+	drawcache->count = 0;
+	arraygrow(drawcache, 1, &ds);
 
 	for (ds.n = 0; ds.n < elems->count; ds.n++) {
 		if (arrayget(elems, ds.n, &e) == nil)
@@ -794,6 +797,7 @@ drawrune(DrawState *ds, Elem *e)
 			draw(screen, r, bg, nil, ZP);
 		ds->pos = ds->nlpos;
 		r = elemrect(ds, e);
+		arraygrow(drawcache, 1, ds);
 	}
 
 	if (rectXrect(r, rich.r) != 0) {
@@ -877,13 +881,16 @@ clearelems(void)
 int
 getelem(Point xy)
 {
-	int i;
+	long i;
 
 	DrawState ds;
-	ds.pos = Pt(rich.r.min.x, rich.r.min.y - rich.scroll);
-	ds.nlpos = Pt(rich.r.min.x, ds.pos.y + font->height);
-	ds.font = font;
-	ds.link = nil;
+
+	for (i = drawcache->count - 1; i >= 0; i--) {
+		if (arrayget(drawcache, 0, &ds) == nil) {
+			sysfatal("getelem: drawcache failure");
+		}
+		if (ds.pos.y < xy.y) break;
+	}
 
 	for (i = 0; i < elems->count; i++) {
 
@@ -943,7 +950,6 @@ getlink(long n)
 	}
 	return nil;
 }
-
 
 Rectangle
 elemrect(DrawState *ds, Elem *e)
