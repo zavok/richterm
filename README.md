@@ -33,7 +33,7 @@ being treated as command and rest as argument.
 - 'f' - set font
 
 For 'n', 't', and 's' argument is ignored and should be empty.
-For 'l' and'f' empty argument will unset the parameter.
+For 'l' and 'f' empty argument will unset the parameter.
 
 # Usage
 
@@ -64,7 +64,7 @@ user menu.
 # Installation
 
 The usual `mk install` invocation will install richterm binary
-into `/$cputype/bin directory` and extra binaries and scripts into
+into `/$objtype/bin directory` and extra binaries and scripts into
 `/sys/lib/richterm/bin/...` directories.
 
 `/sys/lib/richterm/bin/...` will be bound over `/bin` by richterm

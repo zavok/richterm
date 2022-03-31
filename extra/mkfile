@@ -7,7 +7,7 @@ TARG=\
 	Gemini\
 
 SYSLIB=/sys/lib/richterm
-BIN=$SYSLIB/bin/$cputype
+BIN=$SYSLIB/bin/$objtype
 
 </sys/src/cmd/mkmany
 
