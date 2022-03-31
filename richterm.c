@@ -20,6 +20,7 @@ void runcmd(void *);
 void scroll(Point, Rich *);
 void send_interrupt(void);
 void shutdown(void);
+void text2runes(char *str, Array *elems);
 
 Array *elems;
 Array *fonts;
@@ -202,6 +203,7 @@ threadmain(int argc, char **argv)
 			break;
 		case INSERT:
 			insertfromcons(av);
+			nbsend(redrawc, nil);
 			break;
 		case KBD:
 			if (kv == 0x7f) shutdown(); /* delete */
@@ -503,13 +505,13 @@ mpaste(Rich *)
 	long n;
 	char buf[4096];
 	if ((fd = open("/dev/snarf", OREAD)) > 0) {
-		arraygrow(richdata, 1, ".");
 		while((n = read(fd, buf, sizeof(buf))) > 0) {
-			arraygrow(richdata, n, buf);
+			buf[n] = '\0';
+			text2runes(buf, elems);
 		}
-		arraygrow(richdata, 1, "\n");
 		if (n < 0) fprint(2, "mpaste: %r\n");
 		close(fd);
+
 		nbsend(redrawc, nil);
 	}
 }
@@ -665,8 +667,11 @@ void
 text2runes(char *str, Array *elems)
 {
 	if (str == nil) return;
-	Rune *r = runesmprint("%s", str);
-	Rune *rp;
+	if (*str == '\0') return;
+
+	Rune *r, *rp;
+	r = runesmprint("%s", str);
+
 	for (rp = r; *rp != L'\0'; rp++) {
 		Elem *e = mallocz(sizeof(Elem), 1);
 		e->type = TRune;
@@ -842,8 +847,6 @@ insertfromcons(Array *a)
 		arraygrow(elems, 1, &e);
 	}
 	free(r);
-
-	nbsend(redrawc, nil);
 }
 
 void
