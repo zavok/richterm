@@ -17,3 +17,4 @@ void * arraygrow(Array *, long, void *);
 void * arrayget(Array *, long, void *);
 void * arrayend(Array *);
 void * arrayinsert(Array *, long, long, void *);
+void * arrayset(Array *, long, void *);

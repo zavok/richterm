@@ -167,3 +167,16 @@ arrayinsert(Array *ap, long n, long m, void *v)
 	qunlock(ap->l);
 	return  vs;
 }
+
+void *
+arrayset(Array *ap, long n, void *v)
+{
+	assert(ap->magic == MAGIC);
+	if (_arraycheck(ap, n, "arrayset") != 0) return nil;
+	qlock(ap->l);
+	if (v != nil) {
+		memcpy(ap->p + ap->size * n, v, ap->size);
+	}
+	qunlock(ap->l);
+	return _arrayget(ap, n);
+}
