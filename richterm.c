@@ -17,7 +17,7 @@ void insertfromcons(Array *);
 void mouse(Mousectl *, Mouse, int *);
 void resize(void);
 void runcmd(void *);
-void scroll(Point, Rich *);
+void scroll(int, Rich *);
 void send_interrupt(void);
 void shutdown(void);
 void text2runes(char *str, Array *elems);
@@ -152,7 +152,6 @@ threadmain(int argc, char **argv)
 
 	resize();
 	draw(screen, screen->r, Inormbg, nil, ZP);
-	drawelems();
 	drawscrollbar();
 	flushimage(display, 1);
 
@@ -196,7 +195,7 @@ threadmain(int argc, char **argv)
 
 			lockdisplay(display);
 			draw(screen, rich.r, Inormbg, nil, ZP);
-			drawelems();
+			drawelems(0, elems->count);
 			drawscrollbar();
 			flushimage(display, 1);
 			unlockdisplay(display);
@@ -209,25 +208,25 @@ threadmain(int argc, char **argv)
 			if (kv == 0x7f) shutdown(); /* delete */
 			if (kv == 0xf00e) { /* d-pad up */
 				scroll(
-				  Pt(0, rich.scroll - Dy(screen->r) / 8),
+				  rich.scroll - Dy(screen->r) / 8,
 				  &rich);
 				break;
 			}
 			if (kv == 0xf800) { /* d-pad down */
 				scroll(
-				  Pt(0, rich.scroll + Dy(screen->r) / 8),
+				  rich.scroll + Dy(screen->r) / 8,
 				  &rich);
 				break;
 			}
 			if (kv == 0xf00f) { /* page up */
 				scroll(
-				  Pt(0, rich.scroll - Dy(screen->r) / 4),
+				  rich.scroll - Dy(screen->r) / 4,
 				  &rich);
 				break;
 			}
 			if (kv == 0xf013) { /* page down */
 				scroll(
-				  Pt(0, rich.scroll + Dy(screen->r) / 4),
+				  rich.scroll + Dy(screen->r) / 4,
 				  &rich);
 				break;
 			}
@@ -278,19 +277,20 @@ void
 mouse(Mousectl *mc, Mouse mv, int *mmode)
 {
 	static long selstart, selend;
+	long rstart, rend;
 	if (mv.buttons == 0) {
 		*mmode = MM_NONE;
 		return;
 	}
 	if (mv.buttons == 8) {
 		scroll(
-		  Pt(0, rich.scroll - (mv.xy.y - rich.r.min.y)),
+		  rich.scroll - (mv.xy.y - rich.r.min.y),
 		  &rich);
 		return;
 	}
 	if (mv.buttons == 16) {
 		scroll(
-		  Pt(0, rich.scroll + (mv.xy.y - rich.r.min.y)),
+		  rich.scroll + (mv.xy.y - rich.r.min.y),
 		  &rich);
 		return;
 	}
@@ -306,29 +306,36 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 	case MM_SCROLLBAR:
 		if (mv.buttons == 1) {
 			scroll(
-			  subpt(Pt(0, rich.scroll),
-			  Pt(0, mv.xy.y - rich.r.min.y)),
+			  rich.scroll - (mv.xy.y - rich.r.min.y),
 			  &rich);
 		} else if (mv.buttons == 2) {
 			scroll(
-			  Pt(0,
-			    (mv.xy.y - rich.r.min.y) *
-		  	    ((double)rich.max / Dy(rich.r))),
+			  (mv.xy.y - rich.r.min.y) *
+		  	    ((double)rich.max / Dy(rich.r)),
 		 	  &rich);
 		} else if (mv.buttons == 4) {
 			scroll(
-			  addpt(Pt(0, rich.scroll),
-			  Pt(0, mv.xy.y - rich.r.min.y)),
+			  rich.scroll + (mv.xy.y - rich.r.min.y),
 			  &rich);
 		}
 		break;
 	case MM_TEXT:
 		if (mv.buttons == 1) {
+
+			rstart = rich.selmin;
+			rend = rich.selmax;
+
 			selstart = getelem(mv.xy);
 			selend = selstart;
+
 			rich.selmin = selstart;
 			rich.selmax = selstart;
-			nbsend(redrawc, nil);
+
+			lockdisplay(display);
+			drawelems(rstart, rend);
+			flushimage(display, 1);
+			unlockdisplay(display);
+
 			*mmode = MM_SELECT;
 		} else if (mv.buttons == 2) {
 			int f;
@@ -356,6 +363,7 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 		break;
 
 	case MM_SELECT:
+		rend = selend;
 		if (mv.buttons == (1|2)) {
 			break;
 		}
@@ -364,6 +372,7 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 		}
 		selend = getelem(mv.xy);
 		if (selend == -1 ) selend = selstart;
+
 		if (selstart < selend) {
 			rich.selmin = selstart;
 			rich.selmax = selend;
@@ -371,7 +380,12 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 			rich.selmin = selend;
 			rich.selmax = selstart;
 		}
-		nbsend(redrawc, nil);
+
+		lockdisplay(display);
+		if (selend < rend) drawelems(selend, rend);
+		else drawelems(rend, selend);
+		flushimage(display, 1);
+		unlockdisplay(display);
 
 	}
 }
@@ -399,16 +413,23 @@ getfont(Array *fonts, char *name)
 }
 
 void
-scroll(Point p, Rich *r)
+scroll(int y, Rich *r)
 {
-	if (p.y < 0) p.y = 0;
-	if (p.y > r->max) p.y = r->max;
+	int i, delta;
+	if (y < 0) y = 0;
+	if (y > r->max) y = r->max;
 
-	r->scroll = p.y;
+	delta = r->scroll - y;
+	r->scroll = y;
 
-	// qlock(rich.l);
-	// TODO: update elements y positions ???
-	// qunlock(rich.l);
+	for (i = 0; i < drawcache->count; i++) {
+		DrawState *ds;
+		if ((ds = arrayget(drawcache, i, nil)) == nil) {
+			sysfatal("scroll: drawcache failure.");
+		}
+		ds->pos.y += delta;
+		ds->nlpos.y += delta;
+	}
 
 	nbsend(redrawc, nil);
 }
@@ -742,20 +763,33 @@ parsedata(Array *data, Array *elems)
 }
 
 void
-drawelems(void)
+drawelems(long start, long end)
 {
 	DrawState ds;
-	Elem *e;
-	e = nil;
-	ds.pos = Pt(rich.r.min.x, rich.r.min.y - rich.scroll);
-	ds.nlpos = ds.pos; // Pt(rich.r.min.x, ds.pos.y + font->height);
-	ds.font = font;
-	ds.link = nil;
+	Elem *e = nil;
 
-	drawcache->count = 0;
-	arraygrow(drawcache, 1, &ds);
+	for (; drawcache->count > 0; drawcache->count--) {
+		if (arrayget(drawcache, drawcache->count - 1, &ds) == nil) {
+			sysfatal("drawelems: drawcache failure.");
+		}
+		if (ds.n <= start) break;
+	}
 
-	for (ds.n = 0; ds.n < elems->count; ds.n++) {
+	if (drawcache->count == 0) {
+		ds.pos = Pt(rich.r.min.x, rich.r.min.y - rich.scroll);
+		ds.nlpos = ds.pos;
+		ds.font = font;
+		ds.link = nil;
+		ds.n = 0;
+		arraygrow(drawcache, 1, &ds);
+	} else {
+		arrayget(drawcache, 0, &ds);
+		drawcache->count = 1;
+	}
+
+	if (end > elems->count) end = elems->count;
+
+	for (; ds.n < end; ds.n++) {
 		if (arrayget(elems, ds.n, &e) == nil)
 			sysfatal("drawelems: failed to get elem");
 		
@@ -793,15 +827,14 @@ drawrune(DrawState *ds, Elem *e)
 	  (ds->n < rich.selmax)) ? Iselbg : Inormbg;
 
 	if (r.max.x > rich.r.max.x) {
-		if ((bg == Iselbg) && (rectXrect(r, rich.r) != 0))
-			draw(screen, r, bg, nil, ZP);
+		if (rectXrect(r, rich.r) != 0) draw(screen, r, bg, nil, ZP);
 		ds->pos = ds->nlpos;
 		r = elemrect(ds, e);
 		arraygrow(drawcache, 1, ds);
 	}
 
 	if (rectXrect(r, rich.r) != 0) {
-		if (bg == Iselbg) draw(screen, r, bg, nil, ZP);
+		draw(screen, r, bg, nil, ZP);
 		runestringn(screen, ds->pos, fg, ZP, ds->font, R, 1);
 	}
 
@@ -840,7 +873,9 @@ insertfromcons(Array *a)
 	arrayfree(a);
 
 	Rune *r = getrunes(rich.input, elems->count);
+
 	clearelems();
+	drawcache->count = 0;
 
 	parsedata(richdata, elems);
 	rich.input = elems->count;
@@ -889,7 +924,7 @@ getelem(Point xy)
 		if (arrayget(drawcache, 0, &ds) == nil) {
 			sysfatal("getelem: drawcache failure");
 		}
-		if (ds.pos.y < xy.y) break;
+		if (ds.pos.y <= xy.y) break;
 	}
 
 	for (i = 0; i < elems->count; i++) {

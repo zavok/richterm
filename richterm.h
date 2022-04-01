@@ -76,7 +76,7 @@ Rune * getrunes(long, long);
 char * getlink(long n);
 int initfs(char *);
 void clearelems(void);
-void drawelems(void);
+void drawelems(long, long);
 void drawpage(Image *, Rich *);
 void drawscrollbar(void);
 void freeelem(Elem *);
