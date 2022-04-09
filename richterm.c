@@ -509,6 +509,7 @@ send_interrupt(void)
 void
 resize(void)
 {
+	drawcache->count = 0;
 	rich.rs = Rpt(
 	  addpt(Pt(1,1), screen->r.min),
 	  Pt(screen->r.min.x + 13, screen->r.max.y - 1)
