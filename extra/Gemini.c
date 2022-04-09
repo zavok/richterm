@@ -4,10 +4,13 @@
 #include <libsec.h>
 #include <bio.h>
 
+#include "config.h"
+
 #define BSIZE 4096
 
 char *host;
 char * gethost(char *uri);
+void printheader(char *line);
 void printlink(char *);
 void getbody(char *header, Biobuf *bfd);
 
@@ -127,9 +130,10 @@ getbody(char *header, Biobuf *bfd)
 		while ((line = Brdstr(bfd, '\n', 1)) != nil) {
 			long n = Blinelen(bfd);
 			if (line[n-1] == '\r') line[n-1] = '\0';
-			if (strncmp(line, "```", 3) == 0) {
+			if (line[0] == '#') printheader(line);
+			else if (strncmp(line, "```", 3) == 0) {
 				preform = !preform;
-				if (preform == 1) print("f/lib/font/bit/terminus/unicode.12.font\n");
+				if (preform == 1) print("%s", fonts[Fcode]);
 				else print("f\n");
 			} else if (strncmp(line, "=>", 2) == 0) {
 				printlink(line);
@@ -143,6 +147,16 @@ getbody(char *header, Biobuf *bfd)
 	} else {
 		print(".%s\n" "n\n", header);
 	}
+}
+
+void
+printheader(char *line)
+{
+	int i = 0;
+	while (line[i] == '#') i++;
+	char *font = (i > 3) ? fonts[Fheader6] : fonts[Fheader1  + i - 1];
+	while ((line[i] == ' ') | (line[i] == '\t')) i++;
+	print("f%s\n" ".%s\n" "n\n" "f\n", font, line + i);
 }
 
 void
