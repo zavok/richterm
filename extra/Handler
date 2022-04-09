@@ -30,7 +30,7 @@ fn lmarkdown {
 	history = (`{pwd}^/$fname $history)
 	forward = ()
 	clear
-	cat $fname
+	Markdown $fname > $rroot/text
 }
 
 fn lgopher {
@@ -49,7 +49,7 @@ fn tryfile {
 	type=`{file -m $1}
 	switch ($type) {
 	case 'text/plain';
-		lmarkdown $1
+		cat $1
 	case *;
 		plumb $1
 	}

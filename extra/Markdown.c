@@ -1,535 +1,705 @@
 #include <u.h>
 #include <libc.h>
 #include <bio.h>
-#include <String.h>
+#include <thread.h>
 
-char *data;
-long count;
+#include "config.h"
 
-/* Lexer */
+#define ATTACH(array, size, new) \
+	{ \
+		array = realloc(array, sizeof(*array) * (size + 1)); \
+		array[size] = new; \
+		size++; \
+	}
 
-enum {
-	TEOF = 0,
-	TH0, TH1, TH2, TH3, TH4, TH5, TH6,
-	TWORD, TWBRK, TPBRK,
-	TLINK,
-	TCODEBLOCK,
-	TUNDEF = -1,
-};
+#define APPEND(t1, t2) \
+	{ \
+		ATTACH(t1->tokens, t1->count, t2) \
+		t2 = t1; \
+		t1 = nil; \
+	}
 
 typedef struct Token Token;
+
 struct Token {
 	int type;
-	String *s;
-	String *a;
+	union {
+		Rune rune;
+		struct {
+			int count;
+			Token **tokens;
+		};
+	};
 };
 
-void (*lex)(void);
-long p, tokn;
-Token tok, *tokens;
-int oldtype;
+enum {
+	TNil,
 
-void lnewline(void);
+	TRune,
 
-void lheader(void);
-void lhspace(void);
-void lhword(void);
-void lhline(void);
-void lsubhline(void);
+	TSpace,
+	TNewline,
+	TTab,
+	TBraceOpen,
+	TBraceClose,
+	TSqrBraceOpen,
+	TSqrBraceClose,
+	THash,
+	TQuote,
 
-void lword(void);
-void lspace(void);
+	TWhiteSpace,
+	THMarker,
+	TWord,
+	TWords,
+	TQuoted,
+	TBraced,
+	TSqrBraced,
+	TLink,
+	TText,
+	THeader,
+	TLine,
+	TEmptyLine,
+	TParagraph,
 
-void llink(void);
-void lladdr(void);
-void lltitle(void);
+	TMax,
+};
 
-void lcodeblock(void);
+char *names[] = {
+	[TNil] "nil",
+	[TRune] "rune",
 
-char consume(void);
-char peek(int);
-void emit(void);
+	[TSpace] "sp",
+	[TNewline] "nl",
+	[TTab] "tab",
+	[TBraceOpen] "(",
+	[TBraceClose] ")",
+	[TSqrBraceOpen] "[",
+	[TSqrBraceClose] "]",
+	[THash] "#",
+	[TQuote] "\"",
 
-void emitwbrk(void);
-void emitpbrk(void);
+	[TWhiteSpace] "ws",
+	[THMarker] "h_marker",
+	[TWord] "word",
+	[TWords] "words",
+	[TQuoted] "quoted",
+	[TBraced] "()",
+	[TSqrBraced] "[]",
+	[TLink] "link",
+	[TText] "text",
+	[THeader] "h",
+	[TLine] "line",
+	[TEmptyLine] "pb",
+	[TParagraph] "p",
+};
 
-/* Rich */
+Biobuf *bfdin;
 
-char * newobj(void);
-int setfield(char *, char *, char *);
+Token* twrap(int, int, Token **);
+Token** token1(Token *);
 
-void printtoken(Token);
+void input(void *);
+void header(void *);
+void pass1(void *);
+void quote(void *);
+void pass2(void *);
+void words(void *);
+void pass3(void *);
+void link(void *);
+void line(void *);
+void debug(void *);
+void output(void *);
+void clear(void *);
 
-char *root = "/mnt/richterm";
+void freetoken(Token *t);
+void dbgprinttoken(Biobuf *, Token *, int);
+void printtoken(Biobuf *, Token *);
+void printlink(Biobuf *, Token *);
+char * tokentotext(Token *, int);
+
+Rune trune(Token *);
+int ttype(Token *);
+Token ** findtype(Token **, int, int);
 
 void
-main(int argc, char **argv)
+usage(void)
 {
-	int fd;
-	char buf[1024];
-	long i, n;
+	fprint(2, "usage: %s [file]", argv0);
+	threadexitsall("usage");
+}
 
-	if (argc > 1) {
-		if ((fd = open(argv[1], OREAD)) < 0)
-			sysfatal("can't open %s, %r", argv[1]);
-	} else fd = 0;
-	count = 0;
-	data = nil;
-	while ((n = read(fd, buf, sizeof(buf))) > 0) {
-		data = realloc(data, count + n);
-		memcpy(data + count, buf, n);
-		count += n;
+void
+threadmain(int argc, char **argv)
+{
+	ARGBEGIN {
+	default:
+		usage();
+	}ARGEND
+
+	if (argc > 0) {
+		bfdin = Bopen(argv[0], OREAD);
+		if (bfdin == nil) sysfatal("%r");
+	} else bfdin = Bfdopen(0, OREAD);
+
+	int n;
+	Channel **c;
+	void (*pipeline[])(void *) = {
+		input,
+		pass1,
+		quote,
+		pass2,
+		words,
+		pass3,
+		link,
+		header,
+		line,
+//		debug,
+		output,
+		clear,
+	};
+
+	n = sizeof(pipeline) / sizeof(*pipeline);
+
+	c = mallocz(sizeof(Channel *) * (n + 1), 1);
+
+	int i;
+	for (i = 1; i < n; i ++) c[i] = chancreate(sizeof(Token *), 64);
+	for (i = 0; i < n; i++) threadcreate(pipeline[i], (void *)(c + i), 64 * 1024);
+}
+
+Token *
+twrap(int type, int count, Token **tokens)
+{
+	Token *nt = mallocz(sizeof(Token), 1);
+	nt->type = type;
+	nt->count = count;
+	nt->tokens = tokens;
+	return nt;
+}
+
+Token **
+token1(Token *t)
+{
+	Token **tt;
+	tt = malloc(sizeof(Token *));
+	tt[0] = t;
+	return tt;
+}
+
+void
+input(void *v)
+{
+	Channel **c = v;
+
+	Rune r;
+	while ((r = Bgetrune(bfdin)) != Beof) {
+		Token *t = mallocz(sizeof(Token), 1);
+		t->type = TRune;
+		t->rune = r;
+		send(c[1], &t);
 	}
-	if (n < 0) sysfatal("%r");
+	chanclose(c[1]);
+}
 
-	tokens = nil;
-	tokn = 0;
-	tok.s = s_new();
-	tok.a = s_new();
-	tok.type = TUNDEF;
-	oldtype = TUNDEF;
-	lex = lnewline;
-	while(lex != nil) {
-		lex();
+void
+header(void *v)
+{
+	Channel **c = v;
+	Token *t, *nt, **tt;
+	tt = nil;
+	int h = 0;
+	int count = 0;
+	while (recv(c[0], &t) > 0) {
+		if (h == 0) {
+			if (t->type == THMarker) h = 1;
+			else send(c[1], &t);
+		}
+		if (h != 0) {
+			
+			if ((t->type == TNewline) || (t->type == TEmptyLine))  {
+				h = 0;
+				nt = twrap(THeader, count, tt);
+				send(c[1], &nt);
+				send(c[1], &t);
+				tt = nil;
+				count = 0;
+			} else ATTACH(tt, count, t)
+		}
 	}
-	emitpbrk();
-	tok.type = TEOF;
-	emit();
+	if (tt != nil) {
+		nt = twrap(THeader, count, tt);
+		send(c[1], &nt);
+	}
+	chanclose(c[1]);
+}
 
-	for (i = 0; i < tokn; i++) {
-		if (tokens[i].type == TEOF) break;
-		printtoken(tokens[i]);
+void
+pass1(void *v)
+{
+	Channel **c = v;
+	Token *t;
+	while (recv(c[0], &t) > 0) {
+		if (ttype(t) == TRune) {
+			switch (trune(t)) {
+			case L'[':
+				t = twrap(TSqrBraceOpen, 1, token1(t));
+				break;
+			case L']':
+				t = twrap(TSqrBraceClose, 1, token1(t));
+				break;
+			case L'(':
+				t = twrap(TBraceOpen, 1, token1(t));
+				break;
+			case L')':
+				t = twrap(TBraceClose, 1, token1(t));
+				break;
+			case L'\n':
+				t = twrap(TNewline, 1, token1(t));
+				break;
+			case L' ':
+				t = twrap(TSpace, 1, token1(t));
+				break;
+			case L'\t':
+				t = twrap(TTab, 1, token1(t));
+				break;
+			case L'\#':
+				t = twrap(THash, 1, token1(t));
+				break;
+			case L'\"':
+				t = twrap(TQuote, 1, token1(t));
+				break;
+			}
+			send(c[1], &t);
+		}
+	}
+	chanclose(c[1]);
+}
+
+void
+quote(void *v)
+{
+	Channel **c = v;
+	Token *t, *q = nil;
+	while (recv(c[0], &t) > 0) {
+		if (q == nil) {
+			if (ttype(t) == TQuote) {
+				q = twrap(TQuoted, 1, token1(t));
+			} else send(c[1], &t);
+		} else {
+			if (ttype(t) == TQuote) {
+				ATTACH(q->tokens, q->count, t)
+				send(c[1], &q);
+				q = nil;
+			} else ATTACH(q->tokens, q->count, t)
+		}
+	}
+	if (q != nil) {
+		fprint(2, "missing end quote\n");
+		send(c[1], &q);
+	}
+	chanclose(c[1]);
+}
+
+void
+pass2(void *v)
+{
+	Channel **c = v;
+	Token *t[2] = {nil, nil};
+	while (recv(c[0], &t[0]) > 0) {
+		switch(ttype(t[1])) {
+		case TTab:
+		case TSpace:
+			t[1] = twrap(TWhiteSpace, 1, token1(t[1]));
+			break;
+		case THash:
+			t[1] = twrap(THMarker, 1, token1(t[1]));
+			break;
+		case TRune:
+			t[1] = twrap(TWord, 1, token1(t[1]));
+			break;
+		}
+
+		switch(ttype(t[1])) {
+		case TNewline:
+			if (ttype(t[0]) == TNewline) {
+				t[1] = twrap(TEmptyLine, 1, token1(t[1]));
+				APPEND(t[1], t[0])
+			}
+			break;
+		case TWhiteSpace:
+			if ((ttype(t[0]) == TSpace) || (ttype(t[0]) == TTab)) {
+				APPEND(t[1], t[0])
+			}
+			break;
+		case THMarker:
+			if (ttype(t[0]) == THash) {
+				APPEND(t[1], t[0])
+			}
+			break;
+		case TWord:
+			if (ttype(t[0]) == TRune) {
+				APPEND(t[1], t[0])
+			}
+			break;
+		}
+
+		if (t[1] != nil) send(c[1], &t[1]);
+		t[1] = t[0];
+		t[0] = nil;
+	}
+	if (t[1] != nil) send(c[1], &t[1]);
+	chanclose(c[1]);
+}
+
+void
+words(void *v)
+{
+	Channel **c = v;
+	Token *t, **buf;
+	char bf = 0xff;
+	buf = mallocz(sizeof(Token *) * 8, 1);
+	int r = 1;
+	while (bf != 0) {
+		t = nil;
+		if (r > 0) {
+			recv(c[0], &t);
+		}
+		memcpy(buf, buf + 1, 7 * sizeof(Token *));
+		buf[7] = t;
+		bf = (bf << 1) | (1 & (t != nil));
+
+		if (ttype(buf[4]) == TWord) {
+			buf[4] = twrap(TWords, 1, token1(buf[4]));
+		}
+
+		if ((ttype(buf[4]) == TWords) &&
+		  (ttype(buf[5]) == TWhiteSpace) &&
+		  (ttype(buf[6]) == TWord)) {
+			APPEND(buf[4], buf[5])
+			APPEND(buf[5], buf[6])
+		}
+
+		if (buf[0] != nil) {
+			send(c[1], &buf[0]);
+		}
+	}
+	chanclose(c[1]);
+}
+
+void
+pass3(void *v)
+{
+	Channel **c = v;
+	Token *t, *b = nil;
+	while(recv(c[0], &t) > 0) {
+		if (b == nil) {
+			if (ttype(t) == TBraceOpen) {
+				b = twrap(TBraced, 1, token1(t));
+			} else if (ttype(t) == TSqrBraceOpen) {
+				b = twrap(TSqrBraced, 1, token1(t));
+			} else send(c[1], &t);
+		} else if (ttype(b) == TBraced) {
+			if (ttype(t) == TBraceClose) {
+				ATTACH(b->tokens, b->count, t)
+				send(c[1], &b);
+				b = nil;
+				
+			} else ATTACH(b->tokens, b->count, t)
+		} else /* if (ttype(b) == TSqrBtaced) */ {
+			if (ttype(t) == TSqrBraceClose) {
+				ATTACH(b->tokens, b->count, t)
+				send(c[1], &b);
+				b = nil;
+			} else ATTACH(b->tokens, b->count, t)
+		}
+	}
+	if (b != nil) {
+		fprint(2, "unclosed (square? ) brace\n");
+		send(c[1], &b);
+	}
+	chanclose(c[1]);
+}
+
+void
+link(void *v)
+{
+	Channel **c = v;
+	Token *t, *l = nil;
+	while(recv(c[0], &t) > 0) {
+		if (l == nil) {
+			if (ttype(t) == TSqrBraced) {
+				l = t;
+			} else send(c[1], &t);
+		} else {
+			if (ttype(t) == TBraced) {
+				l = twrap(TLink, 1, token1(l));
+				ATTACH(l->tokens, l->count, t)
+				send(c[1], &l);
+				l = nil;
+			} else {
+				send(c[1], &l);
+				send(c[1], &t);
+				l = nil;
+			}
+		}
+	}
+	if (l != nil) send(c[1], &l);
+	chanclose(c[1]);
+}
+
+void
+line(void *v)
+{
+	Channel **c = v;
+	Token *t, *l = nil;
+	while(recv(c[0], &t) > 0) {
+		switch(ttype(t)) {
+		case TWords:
+		case TLink:
+		case TWhiteSpace:
+			if (l == nil) {
+				l = twrap(TLine, 1, token1(t));
+			} else {
+				ATTACH(l->tokens, l->count, t)
+			}
+			break;
+		default:
+			if (l != nil) {
+				send(c[1], &l);
+				l = nil;
+			}
+			send(c[1], &t);
+		}
+	}
+	chanclose(c[1]);
+}
+
+void
+debug(void *v)
+{
+	Channel **c = v;
+	Token *t;
+	Biobuf *b;
+	b = Bfdopen(2, OWRITE);
+	if (b == nil) sysfatal("debug: %r");
+	while (recv(c[0], &t) > 0) {
+		dbgprinttoken(b, t, 0);
+		send(c[1], &t);
+	}
+	chanclose(c[1]);
+	Bflush(b);
+}
+
+void
+output(void *v)
+{
+	Channel **c = v;
+	Token *t;
+	Biobuf *b;
+	b = Bfdopen(1, OWRITE);
+	while (recv(c[0], &t) > 0) {
+		printtoken(b, t);
+		send(c[1], &t);
+	}
+	chanclose(c[1]);
+	Bflush(b);
+}
+
+void
+clear(void *v)
+{
+	Channel **c = v;
+	Token *t;
+	while (recv(c[0], &t) > 0) {
+		freetoken(t);
 	}
 }
 
 void
-lnewline(void)
+freetoken(Token *t)
 {
-	char c;
-	c = peek(0);
-	switch (c){
-	case 0:
-		lex = nil;
+	if (ttype(t) != TRune) 
+		for (; t->count > 0; t->count--) freetoken(t->tokens[t->count - 1]);
+	free(t);
+}
+
+void
+dbgprinttoken(Biobuf *b, Token *t, int ind)
+{
+	int i;
+	char *s;
+	static neednl;
+
+	for (i = 0; i < ind; i++) Bprint(b, "  ");
+
+	neednl = 1;
+	switch (t->type) {
+	case TRune:
+		s = tokentotext(t, 1);
+		Bprint(b, "'%s'", s);
+		free(s);
 		break;
-	// case '\n':
-		// consume();
-		// emitpbrk();
-		// tok.type = TUNDEF;
-		// break;
-	case '#':
-		lex = lheader;
-		consume();
-		tok.type = TH0;
+	case TText:
+		s = tokentotext(t, 1);
+		Bprint(b, "text \"%s\"", s);
+		free(s);
 		break;
-	case '=':
-		lex = lhline;
-		consume();
+	case THMarker:
+		Bprint(b, "h_marker %d", t->count);
 		break;
-	case '-':
-		lex =lsubhline;
-		consume();
+	case TQuoted:
+		Bprint(b, "%s ", names[t->type]);
+	case TWord:
+		s = tokentotext(t, 1);
+		Bprint(b, "\"%s\"", s);
+		free(s);
 		break;
-	case '[':
-		lex = llink;
-		consume();
-		// emitwbrk();
-		break;
-	case '\t':
-		lex = lcodeblock;
-		consume();
+	case TLine:
+	case TLink:
+	case TBraced:
+	case TSqrBraced:
+	case TWords:
+		Bprint(b, "%s\n", names[t->type]);
+		for (i = 0; i < t->count; i++) {
+			dbgprinttoken(b, t->tokens[i], ind + 1);
+		}
 		break;
 	default:
-		lex = lword;
-		// emitwbrk();
+		Bprint(b, "%s", names[t->type]);
+	}
+
+	if (neednl > 0) {
+		neednl = 0;
+		Bprint(b, "\n");
 	}
 }
 
 void
-lword(void)
+printtoken(Biobuf *b, Token *t)
 {
-	char c;
-	c = peek(0);
-	switch (c) {
-	case 0:
-		lex = nil;
-		emit();
+	int i;
+	switch(ttype(t)) {
+	case TWord:
+		Bprint(b, ".");
+		for (i = 0; i < t->count; i++) {
+			Bprint(b, "%C", trune(t->tokens[i]));
+		}
+		Bprint(b, "\n");
 		break;
-	case '\n':
-		lex = lnewline;
-		s_putc(tok.s, c);
-		consume();
-		tok.type = TWORD;
-		emit();
-		tok.type = TUNDEF;
+	case TLink:
+		printlink(b, t);
 		break;
-	// case ' ':
-		// lex = lspace;
-		// s_putc(tok.s, c);
-		// consume();
-		// break;
-	case '[':
-		lex = llink;
-		tok.type = TWORD;
-		emit();
-		consume();
+	case TLine:
+		for (i = 0; i < t->count; i++) printtoken(b, t->tokens[i]);
+		Bprint(b, "n\n");
+		break;
+	case THeader:
+		i = t->tokens[0]->count;
+		if (i > 6) i = 6;
+		i--;
+
+		Bprint(b, "f%s\n", fonts[Fheader1 + i]);
+		for (i = 2; i < t->count; i++) printtoken(b, t->tokens[i]);
+		Bprint(b, "n\n" "f\n");
+		break;
+	case TEmptyLine:
+		Bprint(b, "n\n");
+		break;
+	case TWhiteSpace:
+		Bprint(b, "s\n");
+		break;
+	case TRune:
+		Bprint(b, ".%C\n", t->rune);
+		break;
+	case TNewline:
 		break;
 	default:
-		s_putc(tok.s, c);
-		consume();
+		for (i = 0; i < t->count; i++) printtoken(b, t->tokens[i]);
 	}
 }
 
 void
-lspace(void)
+printlink(Biobuf *b, Token *t)
 {
-	char c;
-	c = peek(0);
-	switch (c) {
-	case ' ':
-		consume();
-		break;
-	case '\n':
-		tok.type = TWORD;
-		lex = lnewline;
-		consume();
-		emit();
-		tok.type = TUNDEF;
-		break;
-	default:
-		lex = lword;
-	}
-}
+	char *text, *url;
+	Token *tlink, *ttext, **tt;
+	ttext = t->tokens[0];
+	tlink = t->tokens[1];
 
-void
-lheader(void)
-{
-	char c;
-	if ((tok.type >= TH0) && (tok.type < TH6)) tok.type++;
-	else {
-		/* an error */
-		lex = nil;
+	tt = findtype(ttext->tokens, ttext->count, TWords);
+	if (tt == nil) {
+		fprint(2, "malformed link\n");
 		return;
 	}
-	c = peek(0);
-	switch (c){
-	case '#':
-		consume();
-		lex = lheader;
-		break;
-	case '\n':
-		/* an error */
-		lex = nil;
-		break;
-	case ' ':
-		consume();
-		lex = lhspace;
-		break;
+	text = tokentotext(*tt, 0);
+
+	tt = findtype(tlink->tokens, tlink->count, TWords);
+	if (tt == nil) {
+		fprint(2, "malformed link\n");
+		free(text);
+		return;
+	}
+	url = tokentotext(*tt, 0);
+
+	Bprint(b, "l%s\n", url);
+	Bprint(b, ".%s\n", text);
+	Bprint(b, "l\n");
+	free(url);
+	free(text);
+}
+
+Token **
+findtype(Token **tt, int count, int type)
+{
+	int i;
+	for (i = 0; i < count; i++) {
+		if (ttype(tt[i]) == type) return tt + i;
+	}
+	return nil;
+}
+
+char *
+tokentotext(Token *t, int escape)
+{
+	char *r, *s;
+	int i;
+	switch (t->type) {
+	case TRune:
+		if (escape != 0) {
+			if (t->rune == L'\n') return smprint("\\n");
+			if (t->rune == L'\t') return smprint("\\t");
+			if (t->rune == L'"') return smprint("\\%c", '"');
+		}
+		return smprint("%C", t->rune);
+	case TWhiteSpace:
+		return smprint(" ");
 	default:
-		/* an error */
-		lex = nil;
+		r = malloc(128);
+		r[0] = '\0';
+		for (i = 0; i < t->count; i++) {
+			s = tokentotext(t->tokens[i], escape);
+			strncat(r, s, 128);
+			free(s);
+		}
+		return r;
 	}
 }
 
-void
-lhspace(void)
+Rune
+trune(Token *t)
 {
-	char c;
-	c = peek(0);
-	switch(c) {
-	case 0:
-	case '\n':
-		lex = nil;
-	case ' ':
-		consume();
-		break;
+	if (t == nil) return Runeerror;
+	switch (t->type) {
+	case TRune:
+		return t->rune;
 	default:
-		lex = lhword;
-	}
-}
-
-void
-lhword(void)
-{
-	char c;
-	c = peek(0);
-	switch(c) {
-	case 0:
-		lex = nil;
-		break;
-	case ' ':
-		s_putc(tok.s, c);
-		consume();
-		lex = lhspace;
-		break;
-	case '\n':
-		consume();
-		emit();
-		emitpbrk();
-		lex = lnewline;
-		break;
-	default:
-		s_putc(tok.s, c);
-		consume();
-	}
-}
-
-void
-lhline(void)
-{
-	char c;
-	c = peek(0);
-	switch (c) {
-	case 0:
-		lex = nil;
-		break;
-	case '=':
-		consume();
-		s_putc(tok.s, c);
-		break;
-	case '\n':
-		lex = lnewline;
-		consume();
-		tokens[tokn - 1].type = TH1;
-		break;
-	default:
-		lex = lword;
-		consume();
-		tok.type = TWORD;
-		emit();
-	};
-}
-
-void
-lsubhline(void)
-{
-	char c;
-	c = peek(0);
-	switch (c){
-	case 0:
-		lex = nil;
-		break;
-	case '-':
-		consume();
-		s_putc(tok.s, c);
-		break;
-	case '\n':
-		lex = lnewline;
-		tokens[tokn - 1].type = TH2;
-		consume();
-		break;
-	default:
-		lex = lword;
-		tok.type = TWORD;
-		consume();
-		emit();
-	}
-}
-
-void
-llink(void)
-{
-	switch (peek(0)){
-	case 0:
-		lex = nil;
-		break;
-	case ']':
-		consume();
-		if (peek(0) == '(') {
-			consume();
-			lex = lladdr;
-		} else lex = lword;
-		break;
-	default:
-		s_putc(tok.s, consume());
-	}
-}
-
-void
-lladdr(void)
-{
-	switch (peek(0)){
-	case 0:
-		lex = nil;
-		break;
-	case ')':
-		lex = lword;
-		s_terminate(tok.a);
-		consume();
-		tok.type = TLINK;
-		emit();
-		tok.type = TUNDEF;
-		break;
-	case ' ':
-		lex = lltitle;
-		consume();
-		break;
-	default:
-		s_putc(tok.a, consume());
-	}
-}
-
-void
-lltitle(void)
-{
-	/* richterm has no support for link titles,
-	 * so we're skipping it
-	 */
-
-	switch (peek(0)){
-	case 0:
-		lex = nil;
-		break;
-	case ')':
-		lex = lladdr;
-		break;
-	case ' ':
-	default:
-		consume();
-	}
-}
-
-void
-lcodeblock(void)
-{
-	switch (peek(0)){
-	case 0:
-		lex = nil;
-		break;
-	case '\n':
-		lex = lnewline;
-		s_putc(tok.s, consume());
-		s_terminate(tok.s);
-		tok.type = TCODEBLOCK;
-		emit();
-		tok.type = TUNDEF;
-		break;
-	default:
-		s_putc(tok.s, consume());
-	}
-}
-
-char
-consume(void)
-{
-	if (p < count) return data[p++];
-	else return 0;
-}
-
-char
-peek(int k)
-{
-	if (p + k < count) return data[p + k];
-	else return 0;
-}
-
-void
-emit(void)
-{
-	s_terminate(tok.s);
-
-	tokens = realloc(tokens, (tokn + 1) * sizeof(Token));
-	tokens[tokn] = tok;
-	tokn++;
-
-	tok.s = s_new();
-	tok.a = s_new();
-	oldtype = tok.type;
-	tok.type = TUNDEF;
-}
-
-void
-emitwbrk(void)
-{
-	if (oldtype == TWORD) {
-		tok.type = TWBRK;
-		emit();
-	}
-}
-
-void
-emitpbrk(void)
-{
-	if (oldtype != TPBRK) {
-		tok.type = TPBRK;
-		emit();
+		return Runeerror;
 	}
 }
 
 int
-setfield(char *id, char *field, char *value)
+ttype(Token *t)
 {
-	char *path;
-	int fd;
-	usize n;
-	path = smprint("%s/%s/%s", root, id, field);
-	fd = open(path, OWRITE);
-	if (fd < 0) sysfatal("%r");
-	n = write(fd, value, strlen(value));
-	if (n != strlen(value)) sysfatal("write failed: %r");
-	close(fd);
-	free(path);
-	return 0;
-}
-
-char *
-newobj(void)
-{
-	char *buf;
-	int fd;
-	fd = open("/mnt/richterm/new", OREAD);
-	if (fd < 0) sysfatal("%r");
-	buf = mallocz(256, 1);
-	read(fd, buf, 256);
-	close(fd);
-	return buf;
-}
-
-void
-printtoken(Token tok)
-{
-	char *font, *text, *link, *id;
-	font = nil;
-	link = nil;
-	text = s_to_c(tok.s);
-	switch(tok.type) {
-	case TH1:
-		font = "/lib/font/bit/lucida/unicode.32.font";
-		break;
-	case TH2:
-		font = "/lib/font/bit/lucida/unicode.28.font";
-		break;
-	case TH3:
-		font = "/lib/font/bit/lucida/unicode.24.font";
-		break;
-	case TH4:
-		font = "/lib/font/bit/lucida/unicode.20.font";
-		break;
-	case TH5:
-		font = "/lib/font/bit/lucida/unicode.18.font";
-		break;
-	case TH6:
-		font = "/lib/font/bit/lucida/unicode.16.font";
-		break;
-	case TWORD:
-		break;
-	case TWBRK:
-		text = " ";
-		break;
-	case TPBRK:
-		text = "\n\n";
-		break;
-	case TLINK:
-		link = s_to_c(tok.a);
-		break;
-	case TCODEBLOCK:
-		text = smprint("\t%s", s_to_c(tok.s));
-		font = "/lib/font/bit/terminus/unicode.16.font";
-		break;
-	default:
-		sysfatal("unknown token type %d for text \"%s\"", tok.type, text);
-	}
-	id = newobj();
-	if (text != nil) setfield(id, "text", text);
-	if (font != nil) setfield(id, "font", font);
-	if (link != nil) setfield(id, "link", link);
+	if (t == nil) return 0;
+	return t->type;
 }

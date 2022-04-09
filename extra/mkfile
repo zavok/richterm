@@ -6,6 +6,8 @@ TARG=\
 	Gopher\
 	Gemini\
 
+HFILES=config.h
+
 SYSLIB=/sys/lib/richterm
 BIN=$SYSLIB/bin/$objtype
 
@@ -18,6 +20,9 @@ install:V: bindir $RC
 
 bindir:V:
 	mkdir -p $BIN
+
+config.h:
+	cp config.def.h config.h
 
 $RC:V:
 	mkdir -p $SYSLIB/bin/rc
