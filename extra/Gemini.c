@@ -154,7 +154,7 @@ printheader(char *line)
 {
 	int i = 0;
 	while (line[i] == '#') i++;
-	char *font = (i > 3) ? fonts[Fheader6] : fonts[Fheader1  + i - 1];
+	char *font = (i > 3) ? fonts[Fheader3] : fonts[Fheader1  + i - 1];
 	while ((line[i] == ' ') | (line[i] == '\t')) i++;
 	print("f%s\n" ".%s\n" "n\n" "f\n", font, line + i);
 }
