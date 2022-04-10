@@ -43,20 +43,18 @@ mostly like usual and it will be send to stdin of running process.
 Right-click menu combines link operations (Follow, Snarf, Plumb)
 and user menu managed by `/menu` file.
 
-# Extra
+## Extra
 
 `Handler` is an rc script that handles richterm's link and menu events.
 It tries to open links in appropriate programs or sends them to
 plumber.
 
-For now, three programs are provided: `Dir`, `Gopher` and `Gemini`:
+For now, these programs are provided:
 
-`Dir` prints direcrory listing, supplied with appropriate link for
-every line.
-
-`Gopher` prints gopher menus and text files from supplied gopher URL.
-
-`Gemini` does the same for gemini URLs.
+- `Dir` prints direcrory listing, supplied with appropriate link for every line.
+- `Markdown` prints [markdown](https://daringfireball.net/projects/markdown/)-formatted files.
+- `Gopher` prints gopher menus and text files from supplied gopher URL.
+- `Gemini` does the same for gemini URLs.
 
 In addition, `Handler` manages primitive link history via 'Back' option in
 user menu.
