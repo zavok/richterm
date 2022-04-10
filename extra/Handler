@@ -29,7 +29,6 @@ fn lmarkdown {
 	cd `{basename -d $1}
 	history = (`{pwd}^/$fname $history)
 	forward = ()
-	clear
 	Markdown $fname > $rroot/text
 }
 
@@ -49,6 +48,9 @@ fn tryfile {
 	type=`{file -m $1}
 	switch ($type) {
 	case 'text/plain';
+		history = ($1 $history)
+		forward = ()
+		clear
 		cat $1
 	case *;
 		plumb $1
