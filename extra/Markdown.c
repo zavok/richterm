@@ -151,7 +151,7 @@ threadmain(int argc, char **argv)
 		words,
 		pass3,
 		link,
-		header,
+//		header,
 		line,
 //		debug,
 		output,
@@ -453,22 +453,32 @@ line(void *v)
 	Channel **c = v;
 	Token *t, *l = nil;
 	while(recv(c[0], &t) > 0) {
-		switch(ttype(t)) {
-		case TWords:
-		case TLink:
-		case TWhiteSpace:
-			if (l == nil) {
+		if (l == nil) {
+			switch (ttype(t)) {
+			case THMarker:
+				l = twrap(THeader, 1, token1(t));
+				break;
+			case TWords:
+			case TLink:
+			case TQuoted:
+			case TBraced:
+			case TSqrBraced:
+			case TWhiteSpace:
 				l = twrap(TLine, 1, token1(t));
-			} else {
-				ATTACH(l->tokens, l->count, t)
+				break;
+			default:
+				send(c[1], &t);
 			}
+		}
+		else switch(ttype(t)) {
+		case TNewline:
+		case TEmptyLine:
+			send(c[1], &l);
+			l = nil;
+			send(c[1], &t);
 			break;
 		default:
-			if (l != nil) {
-				send(c[1], &l);
-				l = nil;
-			}
-			send(c[1], &t);
+			ATTACH(l->tokens, l->count, t)
 		}
 	}
 	chanclose(c[1]);
