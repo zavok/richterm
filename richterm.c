@@ -34,12 +34,13 @@ char *srvname;
 int hostpid = -1;
 Array *drawcache;
 
-void mpaste(Rich *);
-void mplumb(Rich *);
-void msnarf(Rich *);
+void mfollow(void);
+void mpaste(void);
+void mplumb(void);
+void msnarf(void);
 
-char *mitems[] = {"paste", "snarf", "plumb", nil};
-void (*mfunc[])(Rich *) = {mpaste, msnarf, mplumb, nil};
+char *mitems[] = {"follow", "paste", "snarf", "plumb", nil};
+void (*mfunc[])(void) = {mfollow, mpaste, msnarf, mplumb, nil};
 
 Menu mmenu = {
 	.item = mitems,
@@ -340,7 +341,7 @@ mouse(Mousectl *mc, Mouse mv, int *mmode)
 		} else if (mv.buttons == 2) {
 			int f;
 			f = menuhit(2, mc, &mmenu, nil);
-			if (f >= 0) mfunc[f](&rich);
+			if (f >= 0) mfunc[f]();
 			*mmode = MM_NONE;
 		} else if (mv.buttons == 4) {
 			int f;
@@ -521,7 +522,29 @@ resize(void)
 }
 
 void
-mpaste(Rich *)
+mfollow(void)
+{
+	Rune *r;
+	r = getrunes(rich.selmin, rich.selmax);
+	
+	char *link;
+	link = smprint("%S", r);
+
+	Array *a;
+	a = arraycreate(sizeof(char), 1024, nil);
+	if (a == nil) sysfatal("rfollow: arraycreate failed: %r");
+	arraygrow(a, 5, "link ");
+	arraygrow(a, strlen(link), link);
+	arraygrow(a, 1, "\n");
+
+	nbsend(ctlc, &a);
+
+	free(r);
+	free(link);
+}
+
+void
+mpaste(void)
 {
 	int fd;
 	long n;
@@ -539,7 +562,7 @@ mpaste(Rich *)
 }
 
 void
-msnarf(Rich *)
+msnarf(void)
 {
 	int fd;
 	long n;
@@ -558,7 +581,7 @@ msnarf(Rich *)
 }
 
 void
-mplumb(Rich *)
+mplumb(void)
 {
 	char buf[1024];
 	int pd;
