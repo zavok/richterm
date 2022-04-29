@@ -37,26 +37,25 @@ For 'l' and 'f' empty argument will unset the parameter.
 
 # Usage
 
-Richterm runs `rc` shell by default. You can type text on keyboard
-mostly like usual and it will be send to stdin of running process.
+Left mouse button is used for selecting text.
+
+Middle-click menu provides operations on selected text.
 
 Right-click menu combines link operations (Follow, Snarf, Plumb)
 and user menu managed by `/menu` file.
 
-## Extra
+On launch `richterm` will start `/bin/richrc` script by default.
+It handles richterm's link and menu events and tries to open links
+in appropriate programs or sends them to plumber.
 
-`Handler` is an rc script that handles richterm's link and menu events.
-It tries to open links in appropriate programs or sends them to
-plumber.
-
-For now, these programs are provided:
+For now, following programs are provided:
 
 - `Dir` prints direcrory listing, supplied with appropriate link for every line.
 - `Markdown` prints [markdown](https://daringfireball.net/projects/markdown/)-formatted files.
 - `Gopher` prints gopher menus and text files from supplied gopher URL.
 - `Gemini` does the same for gemini URLs.
 
-In addition, `Handler` manages primitive link history via 'Back' option in
+In addition, `richrc` manages primitive link history via 'Back' option in
 user menu.
 
 # Installation
@@ -66,4 +65,4 @@ into `/$objtype/bin directory` and extra binaries and scripts into
 `/sys/lib/richterm/bin/...` directories.
 
 `/sys/lib/richterm/bin/...` will be bound over `/bin` by richterm
-automatically.
+on launch automatically.
