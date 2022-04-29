@@ -30,6 +30,7 @@ Image *Iscrollbar, *Ilink, *Inormbg, *Iselbg, *Itext;
 Keyboardctl *kctl;
 Mousectl *mctl;
 Rich rich;
+char *cmd = "/bin/richrc";
 char *srvname;
 int hostpid = -1;
 Array *drawcache;
@@ -82,7 +83,7 @@ enum {
 void
 usage(void)
 {
-	fprint(2, "usage: %s [-D] [-s srvname] [cmd [args]]\n", argv0);
+	fprint(2, "usage: %s [-D] [-c command] [-s srvname] [args]\n", argv0);
 	exits("usage");
 }
 
@@ -97,6 +98,9 @@ threadmain(int argc, char **argv)
 	ARGBEGIN{
 	case 'D':
 		chatty9p++;
+		break;
+	case 'c':
+		cmd = EARGF(usage());
 		break;
 	case 's':
 		srvname = EARGF(usage());
@@ -459,7 +463,7 @@ void
 runcmd(void *args)
 {
 	char **argv = args;
-	char *cmd, *syslib, *cputype;
+	char *_cmd, *syslib, *cputype;
 	
 	rfork(RFNAMEG);
 
@@ -482,14 +486,16 @@ runcmd(void *args)
 	open("/dev/cons", OWRITE);
 	dup(1, 2);
 	
-	cmd = nil;
+	_cmd = strdup(cmd);
 	while (*argv != nil) {
-		if (cmd == nil) cmd = strdup(*argv);
-		else cmd = smprint("%s %q", cmd, *argv);
+		char *old = _cmd;
+		_cmd = smprint("%s %q", _cmd, *argv);
+		free(old);
 		argv++;
 	}
 
-	procexecl(pidchan, "/bin/rc", "rcX", cmd == nil ? nil : "-c", cmd, nil);
+	procexecl(pidchan, "/bin/rc", "rcX", "-c", _cmd, nil);
+
 	sysfatal("%r");
 }
 

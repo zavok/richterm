@@ -14,7 +14,7 @@ BIN=$SYSLIB/bin/$objtype
 </sys/src/cmd/mkmany
 
 RC=\
-	Handler\
+	richrc\
 
 install:V: bindir $RC
 
