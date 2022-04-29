@@ -5,6 +5,8 @@
 
 #include "config.h"
 
+#define SIZE(X) (sizeof(X)/sizeof(*X))
+
 #define ATTACH(array, size, new) \
 	{ \
 		array = realloc(array, sizeof(*array) * (size + 1)); \
@@ -104,7 +106,6 @@ void pass1(void *);
 void quote(void *);
 void pass2(void *);
 void words(void *);
-void pass3(void *);
 void link(void *);
 void line(void *);
 void debug(void *);
@@ -119,7 +120,9 @@ char * tokentotext(Token *, int);
 
 Rune trune(Token *);
 int ttype(Token *);
+int ttest(Token **, int *, int);
 Token ** findtype(Token **, int, int);
+void tflush(Token *, Channel *);
 
 void
 usage(void)
@@ -149,9 +152,8 @@ threadmain(int argc, char **argv)
 		quote,
 		pass2,
 		words,
-		pass3,
 		link,
-//		header,
+		header,
 		line,
 //		debug,
 		output,
@@ -212,10 +214,9 @@ header(void *v)
 	while (recv(c[0], &t) > 0) {
 		if (h == 0) {
 			if (t->type == THMarker) h = 1;
-			else send(c[1], &t);
+			else h = -1;
 		}
-		if (h != 0) {
-			
+		if (h > 0) {
 			if ((t->type == TNewline) || (t->type == TEmptyLine))  {
 				h = 0;
 				nt = twrap(THeader, count, tt);
@@ -224,6 +225,10 @@ header(void *v)
 				tt = nil;
 				count = 0;
 			} else ATTACH(tt, count, t)
+		}
+		if (h < 0) {
+			send(c[1], &t);
+			if ((t->type == TNewline) || (t->type == TEmptyLine)) h = 0;
 		}
 	}
 	if (tt != nil) {
@@ -337,7 +342,7 @@ pass2(void *v)
 			}
 			break;
 		case TWord:
-			if (ttype(t[0]) == TRune) {
+			if ((ttype(t[0]) == TRune) || (ttype(t[0]) == THash)) {
 				APPEND(t[1], t[0])
 			}
 			break;
@@ -387,63 +392,54 @@ words(void *v)
 }
 
 void
-pass3(void *v)
-{
-	Channel **c = v;
-	Token *t, *b = nil;
-	while(recv(c[0], &t) > 0) {
-		if (b == nil) {
-			if (ttype(t) == TBraceOpen) {
-				b = twrap(TBraced, 1, token1(t));
-			} else if (ttype(t) == TSqrBraceOpen) {
-				b = twrap(TSqrBraced, 1, token1(t));
-			} else send(c[1], &t);
-		} else if (ttype(b) == TBraced) {
-			if (ttype(t) == TBraceClose) {
-				ATTACH(b->tokens, b->count, t)
-				send(c[1], &b);
-				b = nil;
-				
-			} else ATTACH(b->tokens, b->count, t)
-		} else /* if (ttype(b) == TSqrBtaced) */ {
-			if (ttype(t) == TSqrBraceClose) {
-				ATTACH(b->tokens, b->count, t)
-				send(c[1], &b);
-				b = nil;
-			} else ATTACH(b->tokens, b->count, t)
-		}
-	}
-	if (b != nil) {
-		fprint(2, "unclosed (square? ) brace\n");
-		send(c[1], &b);
-	}
-	chanclose(c[1]);
-}
-
-void
 link(void *v)
 {
 	Channel **c = v;
-	Token *t, *l = nil;
-	while(recv(c[0], &t) > 0) {
-		if (l == nil) {
-			if (ttype(t) == TSqrBraced) {
-				l = t;
-			} else send(c[1], &t);
-		} else {
-			if (ttype(t) == TBraced) {
-				l = twrap(TLink, 1, token1(l));
-				ATTACH(l->tokens, l->count, t)
-				send(c[1], &l);
-				l = nil;
-			} else {
-				send(c[1], &l);
-				send(c[1], &t);
-				l = nil;
+	Token **tp, *tbuf[7];
+	int i, j;
+
+	int rlink[] = { TSqrBraceOpen, TWords, TSqrBraceClose, TBraceOpen, TWords, TBraceClose};
+
+	for (i = 0; i < SIZE(tbuf); i++) tbuf[i] = nil;
+
+	for (;;) {
+		for (i = 0; i < SIZE(tbuf); i++) {
+			if (tbuf[i] == nil) recv(c[0], &tbuf[i]);
+		}
+
+		if (ttest(tbuf, rlink, 6) != 0) {
+			Token *t;
+			Token **t0 = malloc(sizeof(Token *) * 3);
+			Token **t1 = malloc(sizeof(Token *) * 3);
+			Token **tlink = malloc(sizeof(Token *) * 2);
+
+			memcpy(t0, tbuf, sizeof(Token *) * 3);
+			memcpy(t1, tbuf + 3, sizeof(Token *) * 3);
+			
+			tlink[0] = twrap(TSqrBraced, 2, t0);
+			tlink[1] = twrap(TBraced, 2, t1);
+
+			t = twrap(TLink, 2, tlink);
+
+			for (j = 0; j < 6; j++) {
+				tbuf[j] = nil;
+			}
+			send(c[1], &t);
+		}
+
+		if (tbuf[0] != nil) send(c[1], &tbuf[0]);
+		tbuf[0] = nil;
+		for (tp = tbuf, i = 1; i < SIZE(tbuf); i++) {
+			if (tbuf[i] != nil) {
+				*tp = tbuf[i];
+				tbuf[i] = nil;
+				tp++;
 			}
 		}
+
+		if (tbuf[0] == nil) break;
 	}
-	if (l != nil) send(c[1], &l);
+
 	chanclose(c[1]);
 }
 
@@ -461,6 +457,10 @@ line(void *v)
 			case TWords:
 			case TLink:
 			case TQuoted:
+			case TBraceOpen:
+			case TSqrBraceOpen:
+			case TBraceClose:
+			case TSqrBraceClose:
 			case TBraced:
 			case TSqrBraced:
 			case TWhiteSpace:
@@ -494,6 +494,7 @@ debug(void *v)
 	if (b == nil) sysfatal("debug: %r");
 	while (recv(c[0], &t) > 0) {
 		dbgprinttoken(b, t, 0);
+		Bflush(b);
 		send(c[1], &t);
 	}
 	chanclose(c[1]);
@@ -528,8 +529,10 @@ clear(void *v)
 void
 freetoken(Token *t)
 {
-	if (ttype(t) != TRune) 
+	if (ttype(t) != TRune) {
 		for (; t->count > 0; t->count--) freetoken(t->tokens[t->count - 1]);
+		free(t->tokens);
+	}
 	free(t);
 }
 
@@ -712,4 +715,21 @@ ttype(Token *t)
 {
 	if (t == nil) return 0;
 	return t->type;
+}
+
+void
+tflush(Token *t, Channel *c)
+{
+	int i;
+	for (i = 0; i < t->count; i++) {
+		send(c, &t->tokens[i]);
+	}
+}
+
+int
+ttest(Token **tt, int *rules, int count)
+{
+	int i;
+	for (i = 0; i < count; i++) if (rules[i] != ttype(tt[i])) return 0;
+	return 1;
 }
